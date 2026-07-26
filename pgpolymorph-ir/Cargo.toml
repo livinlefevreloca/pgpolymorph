@@ -1,0 +1,11 @@
+[package]
+name = "pgpolymorph-ir"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+description = "Intermediate representation and COPY binary codec for PostgreSQL FORMAT binary data"
+
+[dependencies]
+thiserror = "2"
+
+[dev-dependencies]
