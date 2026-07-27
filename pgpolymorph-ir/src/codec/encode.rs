@@ -1,11 +1,11 @@
 //! Encode IR [`Value`]s into PostgreSQL binary field payloads.
 
-use crate::binary::wire;
+use crate::binary::constants;
 use crate::binary::EncodedField;
+use crate::codec::array::{encode_array, ArrayElementEncoding};
 use crate::error::{Error, Result};
 use crate::schema::PgType;
-use crate::codec::array::{encode_array, ArrayElementEncoding};
-use crate::value::types::encode_numeric;
+use crate::value::pgtypes::encode_numeric;
 use crate::value::Value;
 
 pub(crate) fn encode_field(
@@ -66,7 +66,7 @@ fn encode_scalar(value: &Value, ty: &PgType) -> Result<Vec<u8>> {
         (PgType::Name, Value::Name(v)) => Ok(v.value.as_bytes().to_vec()),
         (PgType::Json, Value::Json(v)) => Ok(v.text.as_bytes().to_vec()),
         (PgType::Jsonb, Value::Jsonb(v)) => {
-            let mut buf = Vec::with_capacity(wire::JSONB_VERSION + v.json.len());
+            let mut buf = Vec::with_capacity(constants::JSONB_VERSION_BYTES + v.json.len());
             buf.push(v.version);
             buf.extend_from_slice(v.json.as_bytes());
             Ok(buf)
@@ -89,13 +89,13 @@ fn encode_scalar(value: &Value, ty: &PgType) -> Result<Vec<u8>> {
                 .to_vec())
         }
         (PgType::Timetz, Value::Timetz(v)) => {
-            let mut buf = Vec::with_capacity(wire::TIMETZ);
+            let mut buf = Vec::with_capacity(constants::TIMETZ_PAYLOAD_BYTES);
             buf.extend_from_slice(&v.micros.to_be_bytes());
             buf.extend_from_slice(&v.tz_offset_secs.to_be_bytes());
             Ok(buf)
         }
         (PgType::Interval, Value::Interval(v)) => {
-            let mut buf = Vec::with_capacity(wire::INTERVAL);
+            let mut buf = Vec::with_capacity(constants::INTERVAL_PAYLOAD_BYTES);
             buf.extend_from_slice(&v.micros.to_be_bytes());
             buf.extend_from_slice(&v.days.to_be_bytes());
             buf.extend_from_slice(&v.months.to_be_bytes());

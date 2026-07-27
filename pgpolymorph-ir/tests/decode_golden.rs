@@ -7,7 +7,7 @@ mod utils;
 
 use pgpolymorph_ir::decode;
 use pgpolymorph_ir::schema::PgType;
-use pgpolymorph_ir::value::types;
+use pgpolymorph_ir::value::pgtypes;
 use pgpolymorph_ir::value::{CopyBatch, Row, Value};
 use pgpolymorph_ir::COPY_MAGIC;
 
@@ -33,50 +33,50 @@ fn batch(rows: Vec<Row>) -> CopyBatch {
 }
 
 fn interval_micros(micros: i64) -> Value {
-    Value::Interval(types::PgInterval::new(micros, 0, 0))
+    Value::Interval(pgtypes::PgInterval::new(micros, 0, 0))
 }
 
 fn int32_array(vals: &[i32]) -> Value {
-    Value::Array(types::PgArray::new(
+    Value::Array(pgtypes::PgArray::new(
         PgType::Int4,
-        vec![types::ArrayDimension {
+        vec![pgtypes::ArrayDimension {
             length: vals.len() as i32,
             lower_bound: 1,
         }],
         vals.iter()
-            .map(|&n| Value::Int4(types::PgInt4::new(n)))
+            .map(|&n| Value::Int4(pgtypes::PgInt4::new(n)))
             .collect(),
     ))
 }
 
 fn bool_array(vals: &[bool]) -> Value {
-    Value::Array(types::PgArray::new(
+    Value::Array(pgtypes::PgArray::new(
         PgType::Bool,
-        vec![types::ArrayDimension {
+        vec![pgtypes::ArrayDimension {
             length: vals.len() as i32,
             lower_bound: 1,
         }],
         vals.iter()
-            .map(|&b| Value::Bool(types::PgBool::new(b)))
+            .map(|&b| Value::Bool(pgtypes::PgBool::new(b)))
             .collect(),
     ))
 }
 
 fn int32_matrix_array(vals: &[i32]) -> Value {
-    Value::Array(types::PgArray::new(
+    Value::Array(pgtypes::PgArray::new(
         PgType::Int4,
         vec![
-            types::ArrayDimension {
+            pgtypes::ArrayDimension {
                 length: 2,
                 lower_bound: 1,
             },
-            types::ArrayDimension {
+            pgtypes::ArrayDimension {
                 length: 3,
                 lower_bound: 1,
             },
         ],
         vals.iter()
-            .map(|&n| Value::Int4(types::PgInt4::new(n)))
+            .map(|&n| Value::Int4(pgtypes::PgInt4::new(n)))
             .collect(),
     ))
 }
@@ -93,8 +93,8 @@ fn decode_golden_bool() {
     assert_decodes_to(
         "bool",
         batch(vec![
-            row(Value::Bool(types::PgBool::new(true))),
-            row(Value::Bool(types::PgBool::new(false))),
+            row(Value::Bool(pgtypes::PgBool::new(true))),
+            row(Value::Bool(pgtypes::PgBool::new(false))),
         ]),
     );
 }
@@ -104,8 +104,8 @@ fn decode_golden_bool_nullable() {
     assert_decodes_to(
         "bool_nullable",
         batch(vec![
-            row(Value::Bool(types::PgBool::new(true))),
-            row(Value::Bool(types::PgBool::new(false))),
+            row(Value::Bool(pgtypes::PgBool::new(true))),
+            row(Value::Bool(pgtypes::PgBool::new(false))),
             row(Value::Null),
         ]),
     );
@@ -116,9 +116,9 @@ fn decode_golden_int8() {
     assert_decodes_to(
         "int8",
         batch(vec![
-            row(Value::Int2(types::PgInt2::new(-1))),
-            row(Value::Int2(types::PgInt2::new(0))),
-            row(Value::Int2(types::PgInt2::new(1))),
+            row(Value::Int2(pgtypes::PgInt2::new(-1))),
+            row(Value::Int2(pgtypes::PgInt2::new(0))),
+            row(Value::Int2(pgtypes::PgInt2::new(1))),
         ]),
     );
 }
@@ -128,9 +128,9 @@ fn decode_golden_int16() {
     assert_decodes_to(
         "int16",
         batch(vec![
-            row(Value::Int2(types::PgInt2::new(-1))),
-            row(Value::Int2(types::PgInt2::new(0))),
-            row(Value::Int2(types::PgInt2::new(1))),
+            row(Value::Int2(pgtypes::PgInt2::new(-1))),
+            row(Value::Int2(pgtypes::PgInt2::new(0))),
+            row(Value::Int2(pgtypes::PgInt2::new(1))),
         ]),
     );
 }
@@ -140,9 +140,9 @@ fn decode_golden_int32() {
     assert_decodes_to(
         "int32",
         batch(vec![
-            row(Value::Int4(types::PgInt4::new(-1))),
-            row(Value::Int4(types::PgInt4::new(0))),
-            row(Value::Int4(types::PgInt4::new(1))),
+            row(Value::Int4(pgtypes::PgInt4::new(-1))),
+            row(Value::Int4(pgtypes::PgInt4::new(0))),
+            row(Value::Int4(pgtypes::PgInt4::new(1))),
         ]),
     );
 }
@@ -152,9 +152,9 @@ fn decode_golden_int32_nullable() {
     assert_decodes_to(
         "int32_nullable",
         batch(vec![
-            row(Value::Int4(types::PgInt4::new(-1))),
-            row(Value::Int4(types::PgInt4::new(0))),
-            row(Value::Int4(types::PgInt4::new(1))),
+            row(Value::Int4(pgtypes::PgInt4::new(-1))),
+            row(Value::Int4(pgtypes::PgInt4::new(0))),
+            row(Value::Int4(pgtypes::PgInt4::new(1))),
             row(Value::Null),
         ]),
     );
@@ -165,9 +165,9 @@ fn decode_golden_int64() {
     assert_decodes_to(
         "int64",
         batch(vec![
-            row(Value::Int8(types::PgInt8::new(-1))),
-            row(Value::Int8(types::PgInt8::new(0))),
-            row(Value::Int8(types::PgInt8::new(1))),
+            row(Value::Int8(pgtypes::PgInt8::new(-1))),
+            row(Value::Int8(pgtypes::PgInt8::new(0))),
+            row(Value::Int8(pgtypes::PgInt8::new(1))),
         ]),
     );
 }
@@ -177,10 +177,10 @@ fn decode_golden_float32() {
     assert_decodes_to(
         "float32",
         batch(vec![
-            row(Value::Float4(types::PgFloat4::new(-1.0))),
-            row(Value::Float4(types::PgFloat4::new(0.0))),
-            row(Value::Float4(types::PgFloat4::new(1.0))),
-            row(Value::Float4(types::PgFloat4::new(f32::INFINITY))),
+            row(Value::Float4(pgtypes::PgFloat4::new(-1.0))),
+            row(Value::Float4(pgtypes::PgFloat4::new(0.0))),
+            row(Value::Float4(pgtypes::PgFloat4::new(1.0))),
+            row(Value::Float4(pgtypes::PgFloat4::new(f32::INFINITY))),
         ]),
     );
 }
@@ -190,10 +190,10 @@ fn decode_golden_float64() {
     assert_decodes_to(
         "float64",
         batch(vec![
-            row(Value::Float8(types::PgFloat8::new(-1.0))),
-            row(Value::Float8(types::PgFloat8::new(0.0))),
-            row(Value::Float8(types::PgFloat8::new(1.0))),
-            row(Value::Float8(types::PgFloat8::new(f64::INFINITY))),
+            row(Value::Float8(pgtypes::PgFloat8::new(-1.0))),
+            row(Value::Float8(pgtypes::PgFloat8::new(0.0))),
+            row(Value::Float8(pgtypes::PgFloat8::new(1.0))),
+            row(Value::Float8(pgtypes::PgFloat8::new(f64::INFINITY))),
         ]),
     );
 }
@@ -203,8 +203,8 @@ fn decode_golden_string() {
     assert_decodes_to(
         "string",
         batch(vec![
-            row(Value::Text(types::PgText::new(""))),
-            row(Value::Text(types::PgText::new(STRING))),
+            row(Value::Text(pgtypes::PgText::new(""))),
+            row(Value::Text(pgtypes::PgText::new(STRING))),
         ]),
     );
 }
@@ -214,8 +214,8 @@ fn decode_golden_string_nullable() {
     assert_decodes_to(
         "string_nullable",
         batch(vec![
-            row(Value::Text(types::PgText::new(""))),
-            row(Value::Text(types::PgText::new(STRING))),
+            row(Value::Text(pgtypes::PgText::new(""))),
+            row(Value::Text(pgtypes::PgText::new(STRING))),
             row(Value::Null),
         ]),
     );
@@ -226,8 +226,8 @@ fn decode_golden_binary() {
     assert_decodes_to(
         "binary",
         batch(vec![
-            row(Value::Bytea(types::PgBytea::new(vec![]))),
-            row(Value::Bytea(types::PgBytea::new(BINARY))),
+            row(Value::Bytea(pgtypes::PgBytea::new(vec![]))),
+            row(Value::Bytea(pgtypes::PgBytea::new(BINARY))),
         ]),
     );
 }
@@ -237,8 +237,8 @@ fn decode_golden_binary_nullable() {
     assert_decodes_to(
         "binary_nullable",
         batch(vec![
-            row(Value::Bytea(types::PgBytea::new(vec![]))),
-            row(Value::Bytea(types::PgBytea::new(BINARY))),
+            row(Value::Bytea(pgtypes::PgBytea::new(vec![]))),
+            row(Value::Bytea(pgtypes::PgBytea::new(BINARY))),
             row(Value::Null),
         ]),
     );
@@ -249,9 +249,9 @@ fn decode_golden_date32() {
     assert_decodes_to(
         "date32",
         batch(vec![
-            row(Value::Date(types::PgDate::new(0))),
-            row(Value::Date(types::PgDate::new(-DATE32))),
-            row(Value::Date(types::PgDate::new(DATE32))),
+            row(Value::Date(pgtypes::PgDate::new(0))),
+            row(Value::Date(pgtypes::PgDate::new(-DATE32))),
+            row(Value::Date(pgtypes::PgDate::new(DATE32))),
         ]),
     );
 }
@@ -261,9 +261,9 @@ fn decode_golden_date32_nullable() {
     assert_decodes_to(
         "date32_nullable",
         batch(vec![
-            row(Value::Date(types::PgDate::new(0))),
-            row(Value::Date(types::PgDate::new(-DATE32))),
-            row(Value::Date(types::PgDate::new(DATE32))),
+            row(Value::Date(pgtypes::PgDate::new(0))),
+            row(Value::Date(pgtypes::PgDate::new(-DATE32))),
+            row(Value::Date(pgtypes::PgDate::new(DATE32))),
             row(Value::Null),
         ]),
     );
@@ -274,9 +274,9 @@ fn decode_golden_time_us() {
     assert_decodes_to(
         "time_us",
         batch(vec![
-            row(Value::Time(types::PgTime::new(0))),
-            row(Value::Time(types::PgTime::new(1))),
-            row(Value::Time(types::PgTime::new(TIME_US))),
+            row(Value::Time(pgtypes::PgTime::new(0))),
+            row(Value::Time(pgtypes::PgTime::new(1))),
+            row(Value::Time(pgtypes::PgTime::new(TIME_US))),
         ]),
     );
 }
@@ -286,9 +286,9 @@ fn decode_golden_timestamp_us_notz() {
     assert_decodes_to(
         "timestamp_us_notz",
         batch(vec![
-            row(Value::Timestamp(types::PgTimestamp::new(0))),
-            row(Value::Timestamp(types::PgTimestamp::new(1))),
-            row(Value::Timestamp(types::PgTimestamp::new(TIMESTAMP_US))),
+            row(Value::Timestamp(pgtypes::PgTimestamp::new(0))),
+            row(Value::Timestamp(pgtypes::PgTimestamp::new(1))),
+            row(Value::Timestamp(pgtypes::PgTimestamp::new(TIMESTAMP_US))),
         ]),
     );
 }
@@ -298,9 +298,9 @@ fn decode_golden_timestamp_us_tz() {
     assert_decodes_to(
         "timestamp_us_tz",
         batch(vec![
-            row(Value::Timestamptz(types::PgTimestamptz::new(0))),
-            row(Value::Timestamptz(types::PgTimestamptz::new(1))),
-            row(Value::Timestamptz(types::PgTimestamptz::new(TIMESTAMP_US))),
+            row(Value::Timestamptz(pgtypes::PgTimestamptz::new(0))),
+            row(Value::Timestamptz(pgtypes::PgTimestamptz::new(1))),
+            row(Value::Timestamptz(pgtypes::PgTimestamptz::new(TIMESTAMP_US))),
         ]),
     );
 }
@@ -337,14 +337,14 @@ fn decode_golden_list_bool() {
 
 #[test]
 fn decode_golden_uuid() {
-    assert_decodes_to("uuid", batch(vec![row(Value::Uuid(types::PgUuid::new(UUID)))]));
+    assert_decodes_to("uuid", batch(vec![row(Value::Uuid(pgtypes::PgUuid::new(UUID)))]));
 }
 
 #[test]
 fn decode_golden_uuid_nullable() {
     assert_decodes_to(
         "uuid_nullable",
-        batch(vec![row(Value::Uuid(types::PgUuid::new(UUID))), row(Value::Null)]),
+        batch(vec![row(Value::Uuid(pgtypes::PgUuid::new(UUID))), row(Value::Null)]),
     );
 }
 
@@ -352,20 +352,20 @@ fn decode_golden_uuid_nullable() {
 fn decode_golden_money() {
     assert_decodes_to(
         "money",
-        batch(vec![row(Value::Money(types::PgMoney::new(12_499)))]),
+        batch(vec![row(Value::Money(pgtypes::PgMoney::new(12_499)))]),
     );
 }
 
 #[test]
 fn decode_golden_oid() {
-    assert_decodes_to("oid", batch(vec![row(Value::Oid(types::PgOid::new(3802)))]));
+    assert_decodes_to("oid", batch(vec![row(Value::Oid(pgtypes::PgOid::new(3802)))]));
 }
 
 #[test]
 fn decode_golden_numeric() {
     assert_decodes_to(
         "numeric",
-        batch(vec![row(Value::Numeric(types::PgNumeric::zero()))]),
+        batch(vec![row(Value::Numeric(pgtypes::PgNumeric::zero()))]),
     );
 }
 

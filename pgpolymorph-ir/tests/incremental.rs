@@ -2,7 +2,7 @@
 
 mod utils;
 
-use pgpolymorph_ir::value::types;
+use pgpolymorph_ir::value::pgtypes;
 use pgpolymorph_ir::value::{CopyBatch, Row, Value};
 use pgpolymorph_ir::{decode, encode, Decoder, Encoder};
 
@@ -14,13 +14,13 @@ fn decoder_yields_same_rows_as_decode() {
     let expected = CopyBatch {
         rows: vec![
             Row {
-                values: vec![Value::Int4(types::PgInt4::new(-1))],
+                values: vec![Value::Int4(pgtypes::PgInt4::new(-1))],
             },
             Row {
-                values: vec![Value::Int4(types::PgInt4::new(0))],
+                values: vec![Value::Int4(pgtypes::PgInt4::new(0))],
             },
             Row {
-                values: vec![Value::Int4(types::PgInt4::new(1))],
+                values: vec![Value::Int4(pgtypes::PgInt4::new(1))],
             },
         ],
     };

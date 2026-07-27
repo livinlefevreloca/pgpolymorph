@@ -1,17 +1,16 @@
 //! Incremental COPY binary blob writer.
 
-use crate::binary::constants::FOOTER_SENTINEL;
-use crate::binary::header::CopyHeader;
-use crate::binary::wire;
+use crate::binary::constants::{self, FOOTER_SENTINEL};
+use crate::binary::header::PgBinaryHeader;
 
-pub(crate) struct CopyWriter {
+pub(crate) struct PgBinaryWriter {
     buf: Vec<u8>,
 }
 
-impl CopyWriter {
+impl PgBinaryWriter {
     pub fn new() -> Self {
         let mut buf = Vec::new();
-        CopyHeader::write_to(&mut buf);
+        PgBinaryHeader::write_to(&mut buf);
         Self { buf }
     }
 
@@ -19,12 +18,49 @@ impl CopyWriter {
         self.buf
     }
 
-    pub fn as_mut_vec(&mut self) -> &mut Vec<u8> {
-        &mut self.buf
+    fn write_bytes(&mut self, bytes: &[u8]) {
+        self.buf.extend_from_slice(bytes);
+    }
+
+    pub fn write_field(
+        &mut self,
+        field: EncodedField,
+    ) -> crate::error::Result<()> {
+        match field {
+            EncodedField::Null => {
+                self.write_bytes(&constants::COPY_FIELD_NULL.to_be_bytes());
+            }
+            EncodedField::NonNull(payload) => {
+                let len = i32::try_from(payload.len()).map_err(|_| {
+                    crate::error::Error::FieldTooLarge {
+                        len: payload.len() as i64,
+                    }
+                })?;
+                self.write_bytes(&len.to_be_bytes());
+                self.write_bytes(&payload);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn write_tuple(
+        &mut self,
+        field_count: i16,
+        fields: impl IntoIterator<Item = EncodedField>,
+    ) -> crate::error::Result<()> {
+        self.write_bytes(&field_count.to_be_bytes());
+        for field in fields {
+            self.write_field(field)?;
+        }
+        Ok(())
+    }
+
+    pub fn write_footer(&mut self) {
+        self.write_bytes(&FOOTER_SENTINEL.to_be_bytes());
     }
 }
 
-impl Default for CopyWriter {
+impl Default for PgBinaryWriter {
     fn default() -> Self {
         Self::new()
     }
@@ -34,39 +70,4 @@ impl Default for CopyWriter {
 pub(crate) enum EncodedField {
     Null,
     NonNull(Vec<u8>),
-}
-
-pub(crate) fn write_tuple(
-    writer: &mut CopyWriter,
-    field_count: i16,
-    fields: impl IntoIterator<Item = EncodedField>,
-) -> crate::error::Result<()> {
-    writer
-        .as_mut_vec()
-        .extend_from_slice(&field_count.to_be_bytes());
-    for field in fields {
-        match field {
-            EncodedField::Null => {
-                writer
-                    .as_mut_vec()
-                    .extend_from_slice(&wire::COPY_FIELD_NULL.to_be_bytes());
-            }
-            EncodedField::NonNull(payload) => {
-                let len = i32::try_from(payload.len()).map_err(|_| {
-                    crate::error::Error::FieldTooLarge {
-                        len: payload.len() as i64,
-                    }
-                })?;
-                writer.as_mut_vec().extend_from_slice(&len.to_be_bytes());
-                writer.as_mut_vec().extend_from_slice(&payload);
-            }
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn write_footer(writer: &mut CopyWriter) {
-    writer
-        .as_mut_vec()
-        .extend_from_slice(&FOOTER_SENTINEL.to_be_bytes());
 }

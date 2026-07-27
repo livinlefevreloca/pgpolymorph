@@ -1,6 +1,6 @@
 //! Error handling for malformed or inconsistent COPY binary input.
 
-use pgpolymorph_ir::value::types;
+use pgpolymorph_ir::value::pgtypes;
 use pgpolymorph_ir::{decode, encode, Error};
 use pgpolymorph_ir::schema::{Column, PgType, Schema};
 use pgpolymorph_ir::value::{CopyBatch, Row, Value};
@@ -101,7 +101,7 @@ fn reject_row_with_wrong_column_count_on_encode() {
     let schema = int32_schema(false);
     let batch = CopyBatch {
         rows: vec![Row {
-            values: vec![Value::Int4(types::PgInt4::new(1)), Value::Int4(types::PgInt4::new(2))],
+            values: vec![Value::Int4(pgtypes::PgInt4::new(1)), Value::Int4(pgtypes::PgInt4::new(2))],
         }],
     };
     let err = encode(&schema, &batch).unwrap_err();
@@ -113,7 +113,7 @@ fn reject_type_mismatch_on_encode() {
     let schema = int32_schema(false);
     let batch = CopyBatch {
         rows: vec![Row {
-            values: vec![Value::Text(types::PgText::new("not an int"))],
+            values: vec![Value::Text(pgtypes::PgText::new("not an int"))],
         }],
     };
     let err = encode(&schema, &batch).unwrap_err();

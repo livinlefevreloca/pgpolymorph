@@ -1,5 +1,5 @@
 use crate::binary::FieldReader;
-use crate::binary::wire;
+use crate::binary::constants;
 use crate::error::{Error, Result};
 use crate::schema::PgType;
 
@@ -60,7 +60,7 @@ pub(crate) fn decode_numeric(payload: &[u8], column: &str, ty: &PgType) -> Resul
     }
 
     // Some fixtures use a truncated all-zero header for numeric zero.
-    if payload.len() < wire::NUMERIC_HEADER {
+    if payload.len() < constants::NUMERIC_HEADER_BYTES {
         if payload.iter().all(|&b| b == 0) {
             return Ok(PgNumeric::zero());
         }
@@ -87,7 +87,7 @@ pub(crate) fn decode_numeric(payload: &[u8], column: &str, ty: &PgType) -> Resul
 }
 
 pub(crate) fn encode_numeric(value: &PgNumeric) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(wire::NUMERIC_HEADER + value.digits.len() * wire::NUMERIC_DIGIT);
+    let mut buf = Vec::with_capacity(constants::NUMERIC_HEADER_BYTES + value.digits.len() * constants::NUMERIC_DIGIT_BYTES);
     buf.extend_from_slice(&value.ndigits.to_be_bytes());
     buf.extend_from_slice(&value.weight.to_be_bytes());
     buf.extend_from_slice(&encode_sign(value.sign).to_be_bytes());

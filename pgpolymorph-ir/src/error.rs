@@ -9,6 +9,9 @@ pub enum Error {
     #[error("invalid COPY binary magic bytes")]
     InvalidMagic,
 
+    #[error("invalid COPY binary header: {reason}")]
+    InvalidHeader { reason: &'static str },
+
     #[error("unexpected end of input: expected {expected} bytes, available {available}")]
     UnexpectedEof {
         expected: usize,
@@ -20,6 +23,9 @@ pub enum Error {
 
     #[error("field count mismatch: expected {expected}, got {got}")]
     FieldCountMismatch { expected: i16, got: i16 },
+
+    #[error("too many columns for COPY binary format: max {max}, got {got}")]
+    TooManyColumns { max: i16, got: usize },
 
     #[error("field payload too large: {len} bytes")]
     FieldTooLarge { len: i64 },
@@ -40,6 +46,16 @@ pub enum Error {
         ty: PgType,
         reason: &'static str,
     },
+
+    #[error("array element OID mismatch in column {column}: expected {expected:?}, got OID {element_oid}")]
+    ArrayElementOidMismatch {
+        column: String,
+        expected: PgType,
+        element_oid: u32,
+    },
+
+    #[error("invalid array has_nulls flag in column {column}: got {got}")]
+    InvalidArrayHasNulls { column: String, got: i32 },
 
     #[error("unsupported type {0:?}")]
     UnsupportedType(PgType),

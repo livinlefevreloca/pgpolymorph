@@ -1,21 +1,26 @@
 //! Incremental COPY binary blob parser.
 
-use crate::binary::constants::FOOTER_SENTINEL;
+use crate::binary::constants::{self, FOOTER_SENTINEL};
 use crate::binary::field::{FieldCell, FieldReader};
-use crate::binary::header::CopyHeader;
-use crate::binary::wire;
+use crate::binary::header::PgBinaryHeader;
 use crate::error::{Error, Result};
 use crate::schema::Schema;
 
-pub(crate) struct CopyReader<'a> {
+pub(crate) struct PgBinaryReader<'a> {
     reader: FieldReader<'a>,
     schema: &'a Schema,
     finished: bool,
 }
 
-impl<'a> CopyReader<'a> {
+impl<'a> PgBinaryReader<'a> {
     pub fn new(schema: &'a Schema, data: &'a [u8]) -> Result<Self> {
-        let (_, offset) = CopyHeader::parse(data)?;
+        if schema.columns.len() > i16::MAX as usize {
+            return Err(Error::TooManyColumns {
+                max: i16::MAX,
+                got: schema.columns.len(),
+            });
+        }
+        let (_, offset) = PgBinaryHeader::parse(data)?;
         Ok(Self {
             reader: FieldReader::new(&data[offset..]),
             schema,
@@ -28,22 +33,19 @@ impl<'a> CopyReader<'a> {
             return Ok(None);
         }
 
-        if self.reader.remaining() < wire::COPY_FIELD_COUNT {
+        if self.reader.remaining() < constants::COPY_FIELD_COUNT_BYTES {
             return Err(Error::UnexpectedEof {
-                expected: wire::COPY_FIELD_COUNT,
+                expected: constants::COPY_FIELD_COUNT_BYTES,
                 available: self.reader.remaining(),
             });
         }
 
-        let marker = self.reader.peek_i16()?;
-        if marker == FOOTER_SENTINEL {
-            self.reader.read_i16()?;
-            self.finished = true;
+        if self.try_consume_footer()? {
             return Ok(None);
         }
 
         let field_count = self.reader.read_i16()?;
-        let expected = i16::try_from(self.schema.columns.len()).unwrap_or(i16::MAX);
+        let expected = i16::try_from(self.schema.columns.len()).expect("checked in new");
         if field_count != expected {
             return Err(Error::FieldCountMismatch {
                 expected,
@@ -64,15 +66,25 @@ impl<'a> CopyReader<'a> {
         }
         if self.reader.remaining() == 0 {
             return Err(Error::UnexpectedEof {
-                expected: wire::COPY_FIELD_COUNT,
+                expected: constants::COPY_FIELD_COUNT_BYTES,
                 available: 0,
             });
         }
-        let marker = self.reader.read_i16()?;
-        if marker != FOOTER_SENTINEL {
+        // Caller received `Some(last_row)` and skipped the final `next_tuple_raw` that
+        // would have consumed the footer sentinel.
+        if !self.try_consume_footer()? {
             return Err(Error::InvalidFooter);
         }
-        self.finished = true;
         Ok(())
+    }
+
+    fn try_consume_footer(&mut self) -> Result<bool> {
+        if self.reader.peek_i16()? == FOOTER_SENTINEL {
+            self.reader.read_i16()?;
+            self.finished = true;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }

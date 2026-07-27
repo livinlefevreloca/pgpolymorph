@@ -1,44 +1,41 @@
 //! COPY binary file header.
 
-use crate::binary::constants::COPY_MAGIC;
-use crate::binary::field::FieldReader;
+use crate::binary::be;
+use crate::binary::constants::{self, COPY_MAGIC};
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CopyHeader {
+pub(crate) struct PgBinaryHeader {
     pub flags: i32,
     pub extension: Vec<u8>,
 }
 
-impl CopyHeader {
+impl PgBinaryHeader {
     pub fn parse(data: &[u8]) -> Result<(Self, usize)> {
-        if data.len() < COPY_MAGIC.len() {
-            return Err(if data.is_empty() {
-                Error::UnexpectedEof {
-                    expected: COPY_MAGIC.len(),
-                    available: 0,
-                }
-            } else {
-                Error::InvalidMagic
-            });
-        }
-        if &data[..COPY_MAGIC.len()] != COPY_MAGIC.as_slice() {
-            return Err(Error::InvalidMagic);
-        }
+        validate_magic(data)?;
+        let rest = &data[COPY_MAGIC.len()..];
 
-        let mut reader = FieldReader::new(&data[COPY_MAGIC.len()..]);
-        let flags = reader.read_i32()?;
-        let ext_len = reader.read_i32()?;
+        let (flags, rest) = read_be_i32(rest)?;
+        let (ext_len, rest) = read_be_i32(rest)?;
         if ext_len < 0 {
-            return Err(Error::UnexpectedEof {
-                expected: ext_len as usize,
-                available: reader.remaining(),
+            return Err(Error::InvalidHeader {
+                reason: "negative extension length",
             });
         }
-        let extension = reader.read_bytes(ext_len as usize)?.to_vec();
-        let consumed = COPY_MAGIC.len() + reader.consumed();
+        let ext_len = ext_len as usize;
+        if rest.len() < ext_len {
+            return Err(Error::UnexpectedEof {
+                expected: ext_len,
+                available: rest.len(),
+            });
+        }
+        let (extension, _) = rest.split_at(ext_len);
+        let consumed = COPY_MAGIC.len() + constants::I32_BYTES + constants::I32_BYTES + ext_len;
         Ok((
-            CopyHeader { flags, extension },
+            PgBinaryHeader {
+                flags,
+                extension: extension.to_vec(),
+            },
             consumed,
         ))
     }
@@ -48,4 +45,34 @@ impl CopyHeader {
         buf.extend_from_slice(&0i32.to_be_bytes());
         buf.extend_from_slice(&0i32.to_be_bytes());
     }
+}
+
+fn validate_magic(data: &[u8]) -> Result<()> {
+    if data.is_empty() {
+        return Err(Error::UnexpectedEof {
+            expected: COPY_MAGIC.len(),
+            available: 0,
+        });
+    }
+    if data.len() < COPY_MAGIC.len() {
+        return Err(Error::InvalidMagic);
+    }
+    if &data[..COPY_MAGIC.len()] != COPY_MAGIC.as_slice() {
+        return Err(Error::InvalidMagic);
+    }
+    Ok(())
+}
+
+fn read_be_i32(data: &[u8]) -> Result<(i32, &[u8])> {
+    if data.len() < constants::I32_BYTES {
+        return Err(Error::UnexpectedEof {
+            expected: constants::I32_BYTES,
+            available: data.len(),
+        });
+    }
+    let (bytes, rest) = data.split_at(constants::I32_BYTES);
+    Ok((
+        be::read_be_i32(bytes).expect("exact length"),
+        rest,
+    ))
 }

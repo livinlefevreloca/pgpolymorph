@@ -14,7 +14,7 @@ This crate owns:
 1. **Value IR** — canonical in-memory representation of PostgreSQL row data
 2. **Schema types** — external `Schema` required for typed decode/encode
 3. **COPY binary format** — parse/serialize the file-format blob (header, tuples, footer, field envelopes)
-4. **Conversion traits** — `FromIr` / `ToIr` trait **definitions** (serde-style: traits here, implementations elsewhere)
+4. **Conversion traits** — `FromCopyBatch` / `ToCopyBatch` trait **definitions** (serde-style: traits here, implementations elsewhere)
 5. **Public API** — `decode` / `encode` between bytes and IR
 
 Format-specific **implementations** of the traits (JSON, Arrow, etc.) live in separate crates (e.g. `pgpolymorph-json`) that depend on `pgpolymorph-ir` and their own format libraries. Trait definitions add **zero dependencies** — only impl crates pull in serde, arrow, etc.
@@ -45,14 +45,15 @@ pgpolymorph/
         ├── error.rs           # Error / Result types
         ├── schema.rs          # PgType, Column, Schema
         ├── value.rs           # Value, Row, CopyBatch
-        ├── traits.rs          # FromIr, ToIr (trait defs only — no impls)
+        ├── traits.rs          # FromCopyBatch, ToCopyBatch (trait defs only — no impls)
         ├── binary/            # COPY binary FILE format (NOT pgwire)
         │   ├── mod.rs
-        │   ├── constants.rs   # magic bytes, sentinel values
+        │   ├── be.rs          # big-endian slice reads
+        │   ├── constants.rs   # magic bytes, payload sizes, COPY envelope constants
         │   ├── field.rs       # FieldCell (length + payload envelope)
-        │   ├── header.rs      # CopyHeader parse/write types
-        │   ├── reader.rs      # CopyReader (incremental blob parse)
-        │   └── writer.rs      # CopyWriter (incremental blob write)
+        │   ├── header.rs      # PgBinaryHeader parse/write
+        │   ├── reader.rs      # PgBinaryReader (incremental blob parse)
+        │   └── writer.rs      # PgBinaryWriter (incremental blob write)
         └── codec/
             ├── mod.rs
             ├── oid.rs         # OID constants + oid → PgType
@@ -73,7 +74,7 @@ All modules contain **type definitions, doc comments, and function/trait signatu
 
 Rationale: keep transitive deps minimal. Use `std::io::Cursor` for byte slicing, manual big-endian reads/writes, and `thiserror` for the `Error` enum. Avoid `bytes`, `serde`, `arrow`, etc.
 
-Future format crates depend only on `pgpolymorph-ir` (for IR types + traits) plus their format-specific deps (e.g. `serde_json`). They **implement** `FromIr` / `ToIr`; they do not redefine the traits.
+Future format crates depend only on `pgpolymorph-ir` (for IR types + traits) plus their format-specific deps (e.g. `serde_json`). They **implement** `FromCopyBatch` / `ToCopyBatch`; they do not redefine the traits.
 
 ---
 
@@ -280,7 +281,7 @@ Design notes:
 
 - `Value` is the **only** format-agnostic data model; downstream crates map `Value` ↔ JSON/Arrow/etc.
 - `Json`/`Jsonb` store raw bytes in v1 to avoid pulling in a JSON parser; a future crate can parse them.
-- No `Serialize`/`Deserialize` derives on IR types (keeps deps minimal; use `FromIr`/`ToIr` instead)
+- No `Serialize`/`Deserialize` derives on IR types (keeps deps minimal; use `FromCopyBatch`/`ToCopyBatch` instead)
 
 ---
 
@@ -288,38 +289,38 @@ Design notes:
 
 Following the **serde model**: trait definitions live in the core crate; format crates provide implementations. This lets users implement custom formats by depending on a single crate (`pgpolymorph-ir`).
 
-### Value-level traits (v1)
+### Batch-level traits (v1)
 
 ```rust
 /// Convert from IR to a native format representation.
-pub trait FromIr: Sized {
+pub trait FromCopyBatch {
+    type Output;
     type Error;
-    fn from_ir(schema: &Schema, column: &Column, value: &Value) -> Result<Self, Self::Error>;
+    fn from_copy_batch(schema: &Schema, batch: &CopyBatch) -> Result<Self::Output, Self::Error>;
 }
 
 /// Convert from a native format representation to IR.
-pub trait ToIr {
+pub trait ToCopyBatch {
     type Error;
-    fn to_ir(&self, schema: &Schema, column: &Column) -> Result<Value, Self::Error>;
+    fn to_copy_batch(&self, schema: &Schema) -> Result<CopyBatch, Self::Error>;
 }
 ```
 
 Design notes:
 
-- `Schema` + `Column` are passed explicitly so impls can validate types, handle nullability, and use column name for error messages.
+- `Schema` is passed explicitly so impls can validate types and column layout.
 - Each format crate defines its own `Error` type (e.g. `pgpolymorph_json::Error`); no coupling to `pgpolymorph_ir::Error`.
-- Batch/row conversion is left to format crates (loop over columns) or added later as optional helper traits / free functions if a common pattern emerges.
 
 ### Example usage (future `pgpolymorph-json`)
 
 ```rust
 // In pgpolymorph-json (separate crate):
-impl FromIr for serde_json::Value { /* ... */ }
-impl ToIr for serde_json::Value { /* ... */ }
+impl FromCopyBatch for serde_json::Value { /* ... */ }
+impl ToCopyBatch for serde_json::Value { /* ... */ }
 
 // User's custom format crate:
-impl FromIr for MyType { /* ... */ }
-impl ToIr for MyType { /* ... */ }
+impl FromCopyBatch for MyOutput { /* ... */ }
+impl ToCopyBatch for MyInput { /* ... */ }
 ```
 
 ### Full pipeline (across crates)
@@ -332,8 +333,8 @@ flowchart LR
 
     Binary -->|"pgpolymorph_ir::decode"| IR
     IR -->|"pgpolymorph_ir::encode"| Binary
-    IR -->|"FromIr"| Native
-    Native -->|"ToIr"| IR
+    IR -->|"FromCopyBatch"| Native
+    Native -->|"ToCopyBatch"| IR
 ```
 
 No trait implementations for JSON, Arrow, or any external format appear in `pgpolymorph-ir`.
@@ -348,10 +349,10 @@ Handles the file-format container only. Assumes the caller passes a complete blo
 
 | Type | Role |
 |------|------|
-| `CopyHeader` | Parsed header (flags, extension bytes) |
+| `PgBinaryHeader` | Parsed header (flags, extension bytes) |
 | `FieldCell<'a>` | `{ is_null: bool, payload: &'a [u8] }` — zero-copy view into input |
-| `CopyReader<'a>` | Iterator over tuples; yields `Vec<FieldCell<'a>>` per row |
-| `CopyWriter` | Writes header, tuples (from raw cells or via typed path), footer |
+| `PgBinaryReader<'a>` | Iterator over tuples; yields `Vec<FieldCell<'a>>` per row |
+| `PgBinaryWriter` | Writes header, tuples (from raw cells or via typed path), footer |
 
 Binary framing layer validates: magic, footer sentinel, field_count consistency, payload lengths within bounds, no truncated reads.
 
@@ -384,14 +385,14 @@ pub fn decode(schema: &Schema, binary: &[u8]) -> Result<CopyBatch, Error>;
 pub fn encode(schema: &Schema, batch: &CopyBatch) -> Result<Vec<u8>, Error>;
 
 /// Incremental decode for large in-memory blobs (same format, row-at-a-time).
-pub struct Decoder<'a> { /* holds schema + CopyReader */ }
+pub struct Decoder<'a> { /* holds schema + PgBinaryReader */ }
 impl<'a> Decoder<'a> {
     pub fn new(schema: &'a Schema, binary: &'a [u8]) -> Result<Self, Error>;
     pub fn next_row(&mut self) -> Result<Option<Row>, Error>;
 }
 
 /// Incremental encode (build blob row-at-a-time).
-pub struct Encoder { /* holds schema + CopyWriter */ }
+pub struct Encoder { /* holds schema + PgBinaryWriter */ }
 impl Encoder {
     pub fn new(schema: &Schema) -> Self;
     pub fn write_row(&mut self, row: &Row) -> Result<(), Error>;
@@ -440,7 +441,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 Explicitly out of scope for `pgpolymorph-ir`:
 
 - **No pgwire protocol** — no message parsing, no CopyData framing, no connection lifecycle; a future `pgpolymorph-pgwire` (or similar) crate strips/assembles blobs and hands them here
-- **No trait implementations for external formats** — `FromIr`/`ToIr` defs only; JSON/Arrow/etc. impls in separate crates
+- **No trait implementations for external formats** — `FromCopyBatch`/`ToCopyBatch` defs only; JSON/Arrow/etc. impls in separate crates
 - **No schema discovery** from PostgreSQL catalog — caller supplies `Schema`
 - **No `FORMAT text`** — binary file format only
 - **No libpq / network I/O** — accepts `&[u8]`, returns `Vec<u8>`

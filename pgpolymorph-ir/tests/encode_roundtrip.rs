@@ -2,7 +2,7 @@
 
 mod utils;
 
-use pgpolymorph_ir::value::types;
+use pgpolymorph_ir::value::pgtypes;
 use pgpolymorph_ir::value::{CopyBatch, Row, Value};
 use pgpolymorph_ir::{decode, encode};
 
@@ -55,10 +55,10 @@ fn encode_then_decode_matches_original_ir() {
     let expected_ir = CopyBatch {
         rows: vec![
             Row {
-                values: vec![Value::Bool(types::PgBool::new(true))],
+                values: vec![Value::Bool(pgtypes::PgBool::new(true))],
             },
             Row {
-                values: vec![Value::Bool(types::PgBool::new(false))],
+                values: vec![Value::Bool(pgtypes::PgBool::new(false))],
             },
         ],
     };

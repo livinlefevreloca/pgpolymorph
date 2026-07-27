@@ -1,7 +1,7 @@
 //! Field envelope: `int32` length prefix + optional payload.
 
 use crate::binary::be;
-use crate::binary::wire;
+use crate::binary::constants;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FieldCell<'a> {
@@ -23,14 +23,10 @@ impl<'a> FieldReader<'a> {
         self.data.len().saturating_sub(self.pos)
     }
 
-    pub fn consumed(&self) -> usize {
-        self.pos
-    }
-
     pub fn read_field(&mut self) -> crate::error::Result<FieldCell<'a>> {
-        let len =
-            be::i32(self.read_bytes(wire::COPY_FIELD_LEN)?).ok_or_else(unexpected_eof)? as i64;
-        if len == i64::from(wire::COPY_FIELD_NULL) {
+        let len = be::read_be_i32(self.read_bytes(constants::COPY_FIELD_LEN_BYTES)?)
+            .expect("read_bytes guarantees exact length") as i64;
+        if len == i64::from(constants::COPY_FIELD_NULL) {
             return Ok(FieldCell {
                 is_null: true,
                 payload: &[],
@@ -47,19 +43,22 @@ impl<'a> FieldReader<'a> {
     }
 
     pub fn read_u8(&mut self) -> crate::error::Result<u8> {
-        Ok(self.read_bytes(wire::U8)?[0])
+        Ok(self.read_bytes(constants::U8_BYTES)?[0])
     }
 
     pub fn read_i16(&mut self) -> crate::error::Result<i16> {
-        be::i16(self.read_bytes(wire::I16)?).ok_or_else(unexpected_eof)
+        Ok(be::read_be_i16(self.read_bytes(constants::I16_BYTES)?)
+            .expect("read_bytes guarantees exact length"))
     }
 
     pub fn read_i32(&mut self) -> crate::error::Result<i32> {
-        be::i32(self.read_bytes(wire::I32)?).ok_or_else(unexpected_eof)
+        Ok(be::read_be_i32(self.read_bytes(constants::I32_BYTES)?)
+            .expect("read_bytes guarantees exact length"))
     }
 
     pub fn read_i64(&mut self) -> crate::error::Result<i64> {
-        be::i64(self.read_bytes(wire::I64)?).ok_or_else(unexpected_eof)
+        Ok(be::read_be_i64(self.read_bytes(constants::I64_BYTES)?)
+            .expect("read_bytes guarantees exact length"))
     }
 
     /// Return all bytes from the current position to the end.
@@ -82,19 +81,13 @@ impl<'a> FieldReader<'a> {
     }
 
     pub fn peek_i16(&self) -> crate::error::Result<i16> {
-        if self.remaining() < wire::I16 {
+        if self.remaining() < constants::I16_BYTES {
             return Err(crate::error::Error::UnexpectedEof {
-                expected: wire::I16,
+                expected: constants::I16_BYTES,
                 available: self.remaining(),
             });
         }
-        be::i16(&self.data[self.pos..self.pos + wire::I16]).ok_or_else(unexpected_eof)
-    }
-}
-
-fn unexpected_eof() -> crate::error::Error {
-    crate::error::Error::UnexpectedEof {
-        expected: 0,
-        available: 0,
+        Ok(be::read_be_i16(&self.data[self.pos..self.pos + constants::I16_BYTES])
+            .expect("length checked"))
     }
 }

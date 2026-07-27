@@ -1,36 +1,36 @@
 //! Intermediate representation of decoded PostgreSQL values.
 
-pub mod types;
+pub mod pgtypes;
 
-pub use types::{ArrayDimension, NumericSign};
+pub use pgtypes::{ArrayDimension, NumericSign};
 
 /// A single decoded column value. Each PostgreSQL type maps to a dedicated IR struct.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Null,
-    Bool(types::PgBool),
-    Bytea(types::PgBytea),
-    Char(types::PgChar),
-    Int2(types::PgInt2),
-    Int4(types::PgInt4),
-    Int8(types::PgInt8),
-    Float4(types::PgFloat4),
-    Float8(types::PgFloat8),
-    Text(types::PgText),
-    Name(types::PgName),
-    Json(types::PgJson),
-    Jsonb(types::PgJsonb),
-    Date(types::PgDate),
-    Time(types::PgTime),
-    Timestamp(types::PgTimestamp),
-    Timestamptz(types::PgTimestamptz),
-    Timetz(types::PgTimetz),
-    Interval(types::PgInterval),
-    Numeric(types::PgNumeric),
-    Uuid(types::PgUuid),
-    Money(types::PgMoney),
-    Oid(types::PgOid),
-    Array(types::PgArray),
+    Bool(pgtypes::PgBool),
+    Bytea(pgtypes::PgBytea),
+    Char(pgtypes::PgChar),
+    Int2(pgtypes::PgInt2),
+    Int4(pgtypes::PgInt4),
+    Int8(pgtypes::PgInt8),
+    Float4(pgtypes::PgFloat4),
+    Float8(pgtypes::PgFloat8),
+    Text(pgtypes::PgText),
+    Name(pgtypes::PgName),
+    Json(pgtypes::PgJson),
+    Jsonb(pgtypes::PgJsonb),
+    Date(pgtypes::PgDate),
+    Time(pgtypes::PgTime),
+    Timestamp(pgtypes::PgTimestamp),
+    Timestamptz(pgtypes::PgTimestamptz),
+    Timetz(pgtypes::PgTimetz),
+    Interval(pgtypes::PgInterval),
+    Numeric(pgtypes::PgNumeric),
+    Uuid(pgtypes::PgUuid),
+    Money(pgtypes::PgMoney),
+    Oid(pgtypes::PgOid),
+    Array(pgtypes::PgArray),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -77,161 +77,161 @@ impl Value {
         matches!(self, Value::Null)
     }
 
-    pub fn as_bool(&self) -> Option<&types::PgBool> {
+    pub fn as_bool(&self) -> Option<&pgtypes::PgBool> {
         match self {
             Value::Bool(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_bytea(&self) -> Option<&types::PgBytea> {
+    pub fn as_bytea(&self) -> Option<&pgtypes::PgBytea> {
         match self {
             Value::Bytea(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_char(&self) -> Option<&types::PgChar> {
+    pub fn as_char(&self) -> Option<&pgtypes::PgChar> {
         match self {
             Value::Char(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_int2(&self) -> Option<&types::PgInt2> {
+    pub fn as_int2(&self) -> Option<&pgtypes::PgInt2> {
         match self {
             Value::Int2(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_int4(&self) -> Option<&types::PgInt4> {
+    pub fn as_int4(&self) -> Option<&pgtypes::PgInt4> {
         match self {
             Value::Int4(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_int8(&self) -> Option<&types::PgInt8> {
+    pub fn as_int8(&self) -> Option<&pgtypes::PgInt8> {
         match self {
             Value::Int8(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_float4(&self) -> Option<&types::PgFloat4> {
+    pub fn as_float4(&self) -> Option<&pgtypes::PgFloat4> {
         match self {
             Value::Float4(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_float8(&self) -> Option<&types::PgFloat8> {
+    pub fn as_float8(&self) -> Option<&pgtypes::PgFloat8> {
         match self {
             Value::Float8(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_text(&self) -> Option<&types::PgText> {
+    pub fn as_text(&self) -> Option<&pgtypes::PgText> {
         match self {
             Value::Text(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_name(&self) -> Option<&types::PgName> {
+    pub fn as_name(&self) -> Option<&pgtypes::PgName> {
         match self {
             Value::Name(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_json(&self) -> Option<&types::PgJson> {
+    pub fn as_json(&self) -> Option<&pgtypes::PgJson> {
         match self {
             Value::Json(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_jsonb(&self) -> Option<&types::PgJsonb> {
+    pub fn as_jsonb(&self) -> Option<&pgtypes::PgJsonb> {
         match self {
             Value::Jsonb(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_date(&self) -> Option<&types::PgDate> {
+    pub fn as_date(&self) -> Option<&pgtypes::PgDate> {
         match self {
             Value::Date(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_time(&self) -> Option<&types::PgTime> {
+    pub fn as_time(&self) -> Option<&pgtypes::PgTime> {
         match self {
             Value::Time(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_timestamp(&self) -> Option<&types::PgTimestamp> {
+    pub fn as_timestamp(&self) -> Option<&pgtypes::PgTimestamp> {
         match self {
             Value::Timestamp(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_timestamptz(&self) -> Option<&types::PgTimestamptz> {
+    pub fn as_timestamptz(&self) -> Option<&pgtypes::PgTimestamptz> {
         match self {
             Value::Timestamptz(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_timetz(&self) -> Option<&types::PgTimetz> {
+    pub fn as_timetz(&self) -> Option<&pgtypes::PgTimetz> {
         match self {
             Value::Timetz(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_interval(&self) -> Option<&types::PgInterval> {
+    pub fn as_interval(&self) -> Option<&pgtypes::PgInterval> {
         match self {
             Value::Interval(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_numeric(&self) -> Option<&types::PgNumeric> {
+    pub fn as_numeric(&self) -> Option<&pgtypes::PgNumeric> {
         match self {
             Value::Numeric(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_uuid(&self) -> Option<&types::PgUuid> {
+    pub fn as_uuid(&self) -> Option<&pgtypes::PgUuid> {
         match self {
             Value::Uuid(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_money(&self) -> Option<&types::PgMoney> {
+    pub fn as_money(&self) -> Option<&pgtypes::PgMoney> {
         match self {
             Value::Money(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_oid(&self) -> Option<&types::PgOid> {
+    pub fn as_oid(&self) -> Option<&pgtypes::PgOid> {
         match self {
             Value::Oid(v) => Some(v),
             _ => None,
         }
     }
 
-    pub fn as_array(&self) -> Option<&types::PgArray> {
+    pub fn as_array(&self) -> Option<&pgtypes::PgArray> {
         match self {
             Value::Array(v) => Some(v),
             _ => None,
