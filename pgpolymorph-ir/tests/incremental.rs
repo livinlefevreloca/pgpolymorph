@@ -3,7 +3,7 @@
 mod utils;
 
 use pgpolymorph_ir::value::pgtypes;
-use pgpolymorph_ir::value::{CopyBatch, Row, Value};
+use pgpolymorph_ir::value::{PgBatch, PgRow, PgValue};
 use pgpolymorph_ir::{decode, encode, Decoder, Encoder};
 
 #[test]
@@ -11,16 +11,16 @@ fn decoder_yields_same_rows_as_decode() {
     let fixture = "int32";
     let schema = utils::schema_for_fixture(fixture);
     let blob = utils::load_fixture(fixture);
-    let expected = CopyBatch {
+    let expected = PgBatch {
         rows: vec![
-            Row {
-                values: vec![Value::Int4(pgtypes::PgInt4::new(-1))],
+            PgRow {
+                values: vec![PgValue::Int4(pgtypes::PgInt4::new(-1))],
             },
-            Row {
-                values: vec![Value::Int4(pgtypes::PgInt4::new(0))],
+            PgRow {
+                values: vec![PgValue::Int4(pgtypes::PgInt4::new(0))],
             },
-            Row {
-                values: vec![Value::Int4(pgtypes::PgInt4::new(1))],
+            PgRow {
+                values: vec![PgValue::Int4(pgtypes::PgInt4::new(1))],
             },
         ],
     };
@@ -35,7 +35,7 @@ fn decoder_yields_same_rows_as_decode() {
     assert!(decoder.next_row().unwrap().is_none());
 
     assert_eq!(batch.rows.len(), expected.rows.len());
-    utils::assert_batches_eq(&expected, &CopyBatch { rows: rows.clone() });
+    utils::assert_batches_eq(&expected, &PgBatch { rows: rows.clone() });
     assert_eq!(batch.rows, rows);
 }
 

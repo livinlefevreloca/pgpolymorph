@@ -1,5 +1,6 @@
 /// PostgreSQL system identifier type (`name`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PgName {
     pub value: String,
 }

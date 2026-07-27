@@ -3,7 +3,7 @@
 use pgpolymorph_ir::value::pgtypes;
 use pgpolymorph_ir::{decode, encode, Error};
 use pgpolymorph_ir::schema::{Column, PgType, Schema};
-use pgpolymorph_ir::value::{CopyBatch, Row, Value};
+use pgpolymorph_ir::value::{PgBatch, PgRow, PgValue};
 
 /// Valid COPY header only (flags + extension length zero); 19 bytes total.
 const TRUNCATED_HEADER: &[u8] = b"PGCOPY\n\xFF\r\n\x00\x00\x00\x00\x00\x00\x00\x00";
@@ -87,9 +87,9 @@ fn reject_field_count_mismatch() {
 #[test]
 fn reject_null_in_non_nullable_column_on_encode() {
     let schema = int32_schema(false);
-    let batch = CopyBatch {
-        rows: vec![Row {
-            values: vec![Value::Null],
+    let batch = PgBatch {
+        rows: vec![PgRow {
+            values: vec![PgValue::Null],
         }],
     };
     let err = encode(&schema, &batch).unwrap_err();
@@ -99,9 +99,9 @@ fn reject_null_in_non_nullable_column_on_encode() {
 #[test]
 fn reject_row_with_wrong_column_count_on_encode() {
     let schema = int32_schema(false);
-    let batch = CopyBatch {
-        rows: vec![Row {
-            values: vec![Value::Int4(pgtypes::PgInt4::new(1)), Value::Int4(pgtypes::PgInt4::new(2))],
+    let batch = PgBatch {
+        rows: vec![PgRow {
+            values: vec![PgValue::Int4(pgtypes::PgInt4::new(1)), PgValue::Int4(pgtypes::PgInt4::new(2))],
         }],
     };
     let err = encode(&schema, &batch).unwrap_err();
@@ -111,9 +111,9 @@ fn reject_row_with_wrong_column_count_on_encode() {
 #[test]
 fn reject_type_mismatch_on_encode() {
     let schema = int32_schema(false);
-    let batch = CopyBatch {
-        rows: vec![Row {
-            values: vec![Value::Text(pgtypes::PgText::new("not an int"))],
+    let batch = PgBatch {
+        rows: vec![PgRow {
+            values: vec![PgValue::Text(pgtypes::PgText::new("not an int"))],
         }],
     };
     let err = encode(&schema, &batch).unwrap_err();

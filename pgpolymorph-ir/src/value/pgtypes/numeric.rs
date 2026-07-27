@@ -5,6 +5,7 @@ use crate::schema::PgType;
 
 /// Sign component of a PostgreSQL `numeric` value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum NumericSign {
     Positive,
     Negative,
@@ -13,6 +14,7 @@ pub enum NumericSign {
 
 /// Arbitrary-precision decimal in PostgreSQL binary numeric layout.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PgNumeric {
     pub ndigits: i16,
     pub weight: i16,

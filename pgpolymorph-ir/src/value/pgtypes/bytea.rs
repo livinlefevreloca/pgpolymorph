@@ -1,4 +1,5 @@
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PgBytea {
     pub bytes: Vec<u8>,
 }

@@ -1,143 +1,161 @@
-//! Encode IR [`Value`]s into PostgreSQL binary field payloads.
+//! Encode IR [`PgValue`]s into PostgreSQL binary field payloads.
 
-use crate::binary::constants;
+use crate::binary::{constants, PG_DATE_EPOCH_OFFSET_DAYS, PG_TIMESTAMP_EPOCH_OFFSET_US};
 use crate::binary::EncodedField;
 use crate::codec::array::{encode_array, ArrayElementEncoding};
 use crate::error::{Error, Result};
 use crate::schema::PgType;
 use crate::value::pgtypes::encode_numeric;
-use crate::value::Value;
+use crate::value::PgValue;
 
-pub(crate) fn encode_field(
-    value: &Value,
-    ty: &PgType,
-    column: &str,
+pub(crate) struct FieldEncoder<'a> {
+    column: &'a str,
+    ty: &'a PgType,
     nullable: bool,
-) -> Result<EncodedField> {
-    if matches!(value, Value::Null) {
-        if nullable {
-            return Ok(EncodedField::Null);
-        }
-        return Err(Error::UnexpectedNull {
-            column: column.to_string(),
-        });
-    }
-
-    if !value_matches_type(value, ty) {
-        return Err(Error::TypeMismatch {
-            column: column.to_string(),
-            expected: ty.clone(),
-            got: crate::value::value_variant_name(value).to_string(),
-        });
-    }
-
-    if matches!(ty, PgType::Array(_)) {
-        return Ok(EncodedField::NonNull(encode_array(value, ty)?));
-    }
-
-    Ok(EncodedField::NonNull(encode_scalar(value, ty)?))
 }
 
-pub(crate) fn encode_array_element(value: &Value, ty: &PgType) -> Result<ArrayElementEncoding> {
-    if matches!(value, Value::Null) {
-        return Ok(ArrayElementEncoding::Null);
+impl<'a> FieldEncoder<'a> {
+    pub fn new(column: &'a str, ty: &'a PgType, nullable: bool) -> Self {
+        Self {
+            column,
+            ty,
+            nullable,
+        }
     }
-    if !value_matches_type(value, ty) {
-        return Err(Error::TypeMismatch {
-            column: String::new(),
-            expected: ty.clone(),
-            got: crate::value::value_variant_name(value).to_string(),
-        });
-    }
-    Ok(ArrayElementEncoding::Payload(encode_scalar(value, ty)?))
-}
 
-fn encode_scalar(value: &Value, ty: &PgType) -> Result<Vec<u8>> {
-    match (ty, value) {
-        (PgType::Bool, Value::Bool(v)) => Ok(vec![u8::from(v.value)]),
-        (PgType::Bytea, Value::Bytea(v)) => Ok(v.bytes.clone()),
-        (PgType::Char, Value::Char(v)) => Ok(v.value.to_be_bytes().to_vec()),
-        (PgType::Int2, Value::Int2(v)) => Ok(v.value.to_be_bytes().to_vec()),
-        (PgType::Int4, Value::Int4(v)) => Ok(v.value.to_be_bytes().to_vec()),
-        (PgType::Int8, Value::Int8(v)) => Ok(v.value.to_be_bytes().to_vec()),
-        (PgType::Float4, Value::Float4(v)) => Ok(v.value.to_be_bytes().to_vec()),
-        (PgType::Float8, Value::Float8(v)) => Ok(v.value.to_be_bytes().to_vec()),
-        (PgType::Text, Value::Text(v)) => Ok(v.value.as_bytes().to_vec()),
-        (PgType::Name, Value::Name(v)) => Ok(v.value.as_bytes().to_vec()),
-        (PgType::Json, Value::Json(v)) => Ok(v.text.as_bytes().to_vec()),
-        (PgType::Jsonb, Value::Jsonb(v)) => {
-            let mut buf = Vec::with_capacity(constants::JSONB_VERSION_BYTES + v.json.len());
-            buf.push(v.version);
-            buf.extend_from_slice(v.json.as_bytes());
-            Ok(buf)
+    pub fn encode(&self, value: &PgValue) -> Result<EncodedField> {
+        if matches!(value, PgValue::Null) {
+            if self.nullable {
+                return Ok(EncodedField::Null);
+            }
+            return Err(Error::UnexpectedNull {
+                column: self.column.to_string(),
+            });
         }
-        (PgType::Date, Value::Date(v)) => {
-            use crate::binary::PG_DATE_EPOCH_OFFSET_DAYS;
-            Ok((v.days - PG_DATE_EPOCH_OFFSET_DAYS).to_be_bytes().to_vec())
+
+        if !value_matches_type(value, self.ty) {
+            return Err(self.type_mismatch(value));
         }
-        (PgType::Time, Value::Time(v)) => Ok(v.micros.to_be_bytes().to_vec()),
-        (PgType::Timestamp, Value::Timestamp(v)) => {
-            use crate::binary::PG_TIMESTAMP_EPOCH_OFFSET_US;
-            Ok((v.micros - PG_TIMESTAMP_EPOCH_OFFSET_US)
+
+        if matches!(self.ty, PgType::Array(_)) {
+            return Ok(EncodedField::NonNull(encode_array(self, value)?));
+        }
+
+        Ok(EncodedField::NonNull(self.encode_scalar(value)?))
+    }
+
+    pub fn encode_array_element(&self, value: &PgValue) -> Result<ArrayElementEncoding> {
+        if matches!(value, PgValue::Null) {
+            return Ok(ArrayElementEncoding::Null);
+        }
+        if !value_matches_type(value, self.ty) {
+            return Err(self.type_mismatch(value));
+        }
+        Ok(ArrayElementEncoding::Payload(self.encode_scalar(value)?))
+    }
+
+    pub(crate) fn column(&self) -> &str {
+        self.column
+    }
+
+    pub(crate) fn ty(&self) -> &PgType {
+        self.ty
+    }
+
+    pub(crate) fn type_mismatch(&self, value: &PgValue) -> Error {
+        Error::TypeMismatch {
+            column: self.column.to_string(),
+            expected: self.ty.clone(),
+            got: crate::value::pg_value_variant_name(value).to_string(),
+        }
+    }
+
+    pub(crate) fn invalid_payload(&self, reason: &'static str) -> Error {
+        Error::InvalidPayload {
+            column: self.column.to_string(),
+            ty: self.ty.clone(),
+            reason,
+        }
+    }
+
+    fn encode_scalar(&self, value: &PgValue) -> Result<Vec<u8>> {
+        match (self.ty, value) {
+            (PgType::Bool, PgValue::Bool(v)) => Ok(vec![u8::from(v.value)]),
+            (PgType::Bytea, PgValue::Bytea(v)) => Ok(v.bytes.clone()),
+            (PgType::Char, PgValue::Char(v)) => Ok(v.value.to_be_bytes().to_vec()),
+            (PgType::Int2, PgValue::Int2(v)) => Ok(v.value.to_be_bytes().to_vec()),
+            (PgType::Int4, PgValue::Int4(v)) => Ok(v.value.to_be_bytes().to_vec()),
+            (PgType::Int8, PgValue::Int8(v)) => Ok(v.value.to_be_bytes().to_vec()),
+            (PgType::Float4, PgValue::Float4(v)) => Ok(v.value.to_be_bytes().to_vec()),
+            (PgType::Float8, PgValue::Float8(v)) => Ok(v.value.to_be_bytes().to_vec()),
+            (PgType::Text, PgValue::Text(v)) => Ok(v.value.as_bytes().to_vec()),
+            (PgType::Name, PgValue::Name(v)) => Ok(v.value.as_bytes().to_vec()),
+            (PgType::Json, PgValue::Json(v)) => Ok(v.text.as_bytes().to_vec()),
+            (PgType::Jsonb, PgValue::Jsonb(v)) => {
+                let mut buf = Vec::with_capacity(constants::JSONB_VERSION_BYTES + v.json.len());
+                buf.push(v.version);
+                buf.extend_from_slice(v.json.as_bytes());
+                Ok(buf)
+            }
+            (PgType::Date, PgValue::Date(v)) => {
+                Ok((v.days - PG_DATE_EPOCH_OFFSET_DAYS).to_be_bytes().to_vec())
+            }
+            (PgType::Time, PgValue::Time(v)) => Ok(v.micros.to_be_bytes().to_vec()),
+            (PgType::Timestamp, PgValue::Timestamp(v)) => Ok((v.micros - PG_TIMESTAMP_EPOCH_OFFSET_US)
                 .to_be_bytes()
-                .to_vec())
+                .to_vec()),
+            (PgType::Timestamptz, PgValue::Timestamptz(v)) => {
+                Ok((v.micros - PG_TIMESTAMP_EPOCH_OFFSET_US)
+                    .to_be_bytes()
+                    .to_vec())
+            }
+            (PgType::Timetz, PgValue::Timetz(v)) => {
+                let mut buf = Vec::with_capacity(constants::TIMETZ_PAYLOAD_BYTES);
+                buf.extend_from_slice(&v.micros.to_be_bytes());
+                buf.extend_from_slice(&v.tz_offset_secs.to_be_bytes());
+                Ok(buf)
+            }
+            (PgType::Interval, PgValue::Interval(v)) => {
+                let mut buf = Vec::with_capacity(constants::INTERVAL_PAYLOAD_BYTES);
+                buf.extend_from_slice(&v.micros.to_be_bytes());
+                buf.extend_from_slice(&v.days.to_be_bytes());
+                buf.extend_from_slice(&v.months.to_be_bytes());
+                Ok(buf)
+            }
+            (PgType::Numeric, PgValue::Numeric(v)) => Ok(encode_numeric(&v)),
+            (PgType::Uuid, PgValue::Uuid(v)) => Ok(v.bytes.to_vec()),
+            (PgType::Money, PgValue::Money(v)) => Ok(v.amount.to_be_bytes().to_vec()),
+            (PgType::Oid, PgValue::Oid(v)) => Ok(v.value.to_be_bytes().to_vec()),
+            _ => Err(self.type_mismatch(value)),
         }
-        (PgType::Timestamptz, Value::Timestamptz(v)) => {
-            use crate::binary::PG_TIMESTAMP_EPOCH_OFFSET_US;
-            Ok((v.micros - PG_TIMESTAMP_EPOCH_OFFSET_US)
-                .to_be_bytes()
-                .to_vec())
-        }
-        (PgType::Timetz, Value::Timetz(v)) => {
-            let mut buf = Vec::with_capacity(constants::TIMETZ_PAYLOAD_BYTES);
-            buf.extend_from_slice(&v.micros.to_be_bytes());
-            buf.extend_from_slice(&v.tz_offset_secs.to_be_bytes());
-            Ok(buf)
-        }
-        (PgType::Interval, Value::Interval(v)) => {
-            let mut buf = Vec::with_capacity(constants::INTERVAL_PAYLOAD_BYTES);
-            buf.extend_from_slice(&v.micros.to_be_bytes());
-            buf.extend_from_slice(&v.days.to_be_bytes());
-            buf.extend_from_slice(&v.months.to_be_bytes());
-            Ok(buf)
-        }
-        (PgType::Numeric, Value::Numeric(v)) => Ok(encode_numeric(v)),
-        (PgType::Uuid, Value::Uuid(v)) => Ok(v.bytes.to_vec()),
-        (PgType::Money, Value::Money(v)) => Ok(v.amount.to_be_bytes().to_vec()),
-        (PgType::Oid, Value::Oid(v)) => Ok(v.value.to_be_bytes().to_vec()),
-        _ => Err(Error::TypeMismatch {
-            column: String::new(),
-            expected: ty.clone(),
-            got: crate::value::value_variant_name(value).to_string(),
-        }),
     }
 }
 
-fn value_matches_type(value: &Value, ty: &PgType) -> bool {
+fn value_matches_type(value: &PgValue, ty: &PgType) -> bool {
     matches!(
         (ty, value),
-        (PgType::Bool, Value::Bool(_))
-            | (PgType::Bytea, Value::Bytea(_))
-            | (PgType::Char, Value::Char(_))
-            | (PgType::Int2, Value::Int2(_))
-            | (PgType::Int4, Value::Int4(_))
-            | (PgType::Int8, Value::Int8(_))
-            | (PgType::Float4, Value::Float4(_))
-            | (PgType::Float8, Value::Float8(_))
-            | (PgType::Text, Value::Text(_))
-            | (PgType::Name, Value::Name(_))
-            | (PgType::Json, Value::Json(_))
-            | (PgType::Jsonb, Value::Jsonb(_))
-            | (PgType::Date, Value::Date(_))
-            | (PgType::Time, Value::Time(_))
-            | (PgType::Timestamp, Value::Timestamp(_))
-            | (PgType::Timestamptz, Value::Timestamptz(_))
-            | (PgType::Timetz, Value::Timetz(_))
-            | (PgType::Interval, Value::Interval(_))
-            | (PgType::Numeric, Value::Numeric(_))
-            | (PgType::Uuid, Value::Uuid(_))
-            | (PgType::Money, Value::Money(_))
-            | (PgType::Oid, Value::Oid(_))
-            | (PgType::Array(_), Value::Array(_))
+        (PgType::Bool, PgValue::Bool(_))
+            | (PgType::Bytea, PgValue::Bytea(_))
+            | (PgType::Char, PgValue::Char(_))
+            | (PgType::Int2, PgValue::Int2(_))
+            | (PgType::Int4, PgValue::Int4(_))
+            | (PgType::Int8, PgValue::Int8(_))
+            | (PgType::Float4, PgValue::Float4(_))
+            | (PgType::Float8, PgValue::Float8(_))
+            | (PgType::Text, PgValue::Text(_))
+            | (PgType::Name, PgValue::Name(_))
+            | (PgType::Json, PgValue::Json(_))
+            | (PgType::Jsonb, PgValue::Jsonb(_))
+            | (PgType::Date, PgValue::Date(_))
+            | (PgType::Time, PgValue::Time(_))
+            | (PgType::Timestamp, PgValue::Timestamp(_))
+            | (PgType::Timestamptz, PgValue::Timestamptz(_))
+            | (PgType::Timetz, PgValue::Timetz(_))
+            | (PgType::Interval, PgValue::Interval(_))
+            | (PgType::Numeric, PgValue::Numeric(_))
+            | (PgType::Uuid, PgValue::Uuid(_))
+            | (PgType::Money, PgValue::Money(_))
+            | (PgType::Oid, PgValue::Oid(_))
+            | (PgType::Array(_), PgValue::Array(_))
     )
 }

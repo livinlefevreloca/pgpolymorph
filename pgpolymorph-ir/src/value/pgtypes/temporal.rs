@@ -1,5 +1,6 @@
 /// Calendar date as days since the Unix epoch (1970-01-01).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PgDate {
     pub days: i32,
 }
@@ -12,6 +13,7 @@ impl PgDate {
 
 /// Time of day as microseconds since midnight (no date component).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PgTime {
     pub micros: i64,
 }
@@ -24,6 +26,7 @@ impl PgTime {
 
 /// Timestamp without time zone, as microseconds since the Unix epoch (UTC).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PgTimestamp {
     pub micros: i64,
 }
@@ -36,6 +39,7 @@ impl PgTimestamp {
 
 /// Timestamp with time zone, as microseconds since the Unix epoch (UTC).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PgTimestamptz {
     pub micros: i64,
 }
@@ -48,6 +52,7 @@ impl PgTimestamptz {
 
 /// Time of day with time-zone offset from UTC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PgTimetz {
     pub micros: i64,
     pub tz_offset_secs: i32,

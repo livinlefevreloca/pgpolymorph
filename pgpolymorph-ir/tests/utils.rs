@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use pgpolymorph_ir::schema::{Column, PgType, Schema};
-use pgpolymorph_ir::value::CopyBatch;
+use pgpolymorph_ir::value::PgBatch;
 
 pub fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
@@ -72,7 +72,7 @@ fn column_for_fixture(base: &str) -> (&'static str, PgType) {
     }
 }
 
-pub fn assert_batches_eq(expected: &CopyBatch, actual: &CopyBatch) {
+pub fn assert_batches_eq(expected: &PgBatch, actual: &PgBatch) {
     assert_eq!(
         expected.rows.len(),
         actual.rows.len(),

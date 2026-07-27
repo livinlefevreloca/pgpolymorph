@@ -3,6 +3,7 @@
 /// Stored as `i16` because PostgreSQL binary format sends the internal `char` type
 /// as a 2-byte big-endian integer, not as a Rust `char` or UTF-8 code point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PgChar {
     pub value: i16,
 }

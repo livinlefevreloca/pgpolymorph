@@ -4,8 +4,8 @@
 
 Bootstrap a Rust workspace in [`/Users/adam/pgpolymorph`](/Users/adam/pgpolymorph) with one crate, **`pgpolymorph-ir`**, that is a **bidirectional converter** between:
 
-- **Input A:** a valid PostgreSQL `FORMAT binary` blob in memory + an external `Schema` → **Output:** typed IR (`CopyBatch`)
-- **Input B:** typed IR (`CopyBatch`) + an external `Schema` → **Output:** a valid `FORMAT binary` blob (`Vec<u8>`)
+- **Input A:** a valid PostgreSQL `FORMAT binary` blob in memory + an external `Schema` → **Output:** typed IR (`PgBatch`)
+- **Input B:** typed IR (`PgBatch`) + an external `Schema` → **Output:** a valid `FORMAT binary` blob (`Vec<u8>`)
 
 The blob is exactly what you get from reading a file dumped by PostgreSQL in binary format (e.g. `\copy t TO 'out.bin' WITH (FORMAT binary)`). The caller is responsible for obtaining that blob — this crate does **not** talk to PostgreSQL, libpq, or the network.
 
@@ -14,7 +14,7 @@ This crate owns:
 1. **Value IR** — canonical in-memory representation of PostgreSQL row data
 2. **Schema types** — external `Schema` required for typed decode/encode
 3. **COPY binary format** — parse/serialize the file-format blob (header, tuples, footer, field envelopes)
-4. **Conversion traits** — `FromCopyBatch` / `ToCopyBatch` trait **definitions** (serde-style: traits here, implementations elsewhere)
+4. **Conversion traits** — `FromPgBatch` / `ToPgBatch` trait **definitions** (serde-style: traits here, implementations elsewhere)
 5. **Public API** — `decode` / `encode` between bytes and IR
 
 Format-specific **implementations** of the traits (JSON, Arrow, etc.) live in separate crates (e.g. `pgpolymorph-json`) that depend on `pgpolymorph-ir` and their own format libraries. Trait definitions add **zero dependencies** — only impl crates pull in serde, arrow, etc.
@@ -38,14 +38,14 @@ Reference for PostgreSQL binary type encodings: PostgreSQL documentation and `sr
 pgpolymorph/
 ├── Cargo.toml                 # [workspace] members = ["pgpolymorph-ir"]
 └── pgpolymorph-ir/
-    ├── Cargo.toml             # thiserror only
+    ├── Cargo.toml             # thiserror; optional serde feature
     ├── README.md              # COPY binary format + IR overview
     └── src/
         ├── lib.rs             # crate docs + re-exports + top-level API signatures
         ├── error.rs           # Error / Result types
         ├── schema.rs          # PgType, Column, Schema
-        ├── value.rs           # Value, Row, CopyBatch
-        ├── traits.rs          # FromCopyBatch, ToCopyBatch (trait defs only — no impls)
+        ├── value/             # PgValue, PgRow, PgBatch + pgtypes/
+        ├── traits.rs          # FromPgBatch, ToPgBatch (trait defs only — no impls)
         ├── binary/            # COPY binary FILE format (NOT pgwire)
         │   ├── mod.rs
         │   ├── be.rs          # big-endian slice reads
@@ -57,8 +57,8 @@ pgpolymorph/
         └── codec/
             ├── mod.rs
             ├── oid.rs         # OID constants + oid → PgType
-            ├── decode.rs      # payload bytes → Value (per PgType)
-            ├── encode.rs      # Value → payload bytes (per PgType)
+            ├── decode.rs      # FieldDecoder: payload bytes → PgValue (per PgType)
+            ├── encode.rs      # FieldEncoder: PgValue → payload bytes (per PgType)
             └── array.rs       # array header + element iteration
 ```
 
@@ -70,11 +70,14 @@ All modules contain **type definitions, doc comments, and function/trait signatu
 
 | Crate | Dependencies |
 |-------|-------------|
-| `pgpolymorph-ir` | **`thiserror` only** (std otherwise) |
+| `pgpolymorph-ir` (default) | **`thiserror` only** (std otherwise) |
+| `pgpolymorph-ir` + `serde` feature | `thiserror`, optional **`serde`** with `derive` |
 
-Rationale: keep transitive deps minimal. Use `std::io::Cursor` for byte slicing, manual big-endian reads/writes, and `thiserror` for the `Error` enum. Avoid `bytes`, `serde`, `arrow`, etc.
+Rationale: keep transitive deps minimal by default. Use `std::io::Cursor` for byte slicing, manual big-endian reads/writes, and `thiserror` for the `Error` enum. Avoid `bytes`, `arrow`, etc.
 
-Future format crates depend only on `pgpolymorph-ir` (for IR types + traits) plus their format-specific deps (e.g. `serde_json`). They **implement** `FromCopyBatch` / `ToCopyBatch`; they do not redefine the traits.
+Enable **`pgpolymorph-ir/serde`** when you need `Serialize`/`Deserialize` on public IR types (`PgValue`, `PgBatch`, `PgJson`, etc.). JSON/`jsonb` remain raw `String` fields in IR; parse to typed structs with `serde_json::from_str` in format crates or application code. Format-specific conversion still uses `FromPgBatch`/`ToPgBatch` in separate crates.
+
+Future format crates depend only on `pgpolymorph-ir` (for IR types + traits) plus their format-specific deps (e.g. `serde_json`). They **implement** `FromPgBatch` / `ToPgBatch`; they do not redefine the traits.
 
 ---
 
@@ -126,7 +129,7 @@ NON-NULL: [len: int32 BE][payload: len bytes]
 
 ### Footer
 
-| Field | Value |
+| Field | PgValue |
 |-------|-------|
 | sentinel | `int16` `-1` (`0xFFFF`) |
 
@@ -232,56 +235,55 @@ pub struct Schema {
 
 `PgType::oid()` and `PgType::from_oid(u32)` live in [`codec/oid.rs`](src/codec/oid.rs). Unknown OIDs are a decode error in v1 (no `Unknown` variant yet — keeps spec tight; add later if needed).
 
-### Value layer — [`value.rs`](src/value.rs)
+### Value layer — [`value/mod.rs`](src/value/mod.rs)
 
-Typed IR uses **Unix-standard temporal units** at rest (see [IR temporal representation](#ir-temporal-representation)). Binary codec performs PG wire ↔ IR conversion.
+Typed IR uses **Unix-standard temporal units** at rest (see [IR temporal representation](#ir-temporal-representation)). Binary codec performs PG wire ↔ IR conversion. Each PostgreSQL type maps to a dedicated struct under [`value/pgtypes/`](src/value/pgtypes/).
 
 ```rust
-pub enum Value {
+pub enum PgValue {
     Null,
-    Bool(bool),
-    Int16(i16), Int32(i32), Int64(i64),
-    Float32(f32), Float64(f64),
-    Bytes(Vec<u8>),          // Bytea
-    Text(String),            // Text, Name (valid UTF-8)
-    Json(Vec<u8>),           // raw JSON text bytes
-    Jsonb(Vec<u8>),          // version byte + json bytes (as on wire)
-    Date(i32),               // days since Unix epoch (1970-01-01)
-    Time(i64),               // µs since midnight
-    Timestamp(i64),          // µs since Unix epoch (UTC)
-    Timestamptz(i64),        // µs since Unix epoch (UTC)
-    Timetz { micros: i64, tz_offset_secs: i32 },
-    Interval { micros: i64, days: i32, months: i32 },
-    Numeric(Vec<u8>),        // raw PG numeric binary payload; structured sub-type TBD at impl
-    Uuid([u8; 16]),
-    Money(i64),
-    Oid(u32),
-    Array {
-        element_type: PgType,
-        dimensions: Vec<ArrayDimension>,  // len == ndim
-        elements: Vec<Value>,             // flat row-major
-    },
+    Bool(PgBool),
+    Bytea(PgBytea),
+    Char(PgChar),
+    Int2(PgInt2), Int4(PgInt4), Int8(PgInt8),
+    Float4(PgFloat4), Float8(PgFloat8),
+    Text(PgText), Name(PgName),
+    Json(PgJson),           // raw JSON text (not pre-parsed)
+    Jsonb(PgJsonb),         // version byte + raw JSON text
+    Date(PgDate), Time(PgTime),
+    Timestamp(PgTimestamp), Timestamptz(PgTimestamptz), Timetz(PgTimetz),
+    Interval(PgInterval),
+    Numeric(PgNumeric),
+    Uuid(PgUuid),
+    Money(PgMoney), Oid(PgOid),
+    Array(PgArray),
 }
 
 pub struct ArrayDimension {
     pub length: i32,
-    pub lower_bound: i32,
+    pub lower_bound: i32,   // from PG array header (often 1, not always)
 }
 
-pub struct Row {
-    pub values: Vec<Value>,  // len == schema.columns.len()
+pub struct PgArray {
+    pub element_type: PgType,
+    pub dimensions: Vec<ArrayDimension>,
+    pub elements: Vec<PgValue>,   // flat row-major
 }
 
-pub struct CopyBatch {
-    pub rows: Vec<Row>,
+pub struct PgRow {
+    pub values: Vec<PgValue>,  // len == schema.columns.len()
+}
+
+pub struct PgBatch {
+    pub rows: Vec<PgRow>,
 }
 ```
 
 Design notes:
 
-- `Value` is the **only** format-agnostic data model; downstream crates map `Value` ↔ JSON/Arrow/etc.
-- `Json`/`Jsonb` store raw bytes in v1 to avoid pulling in a JSON parser; a future crate can parse them.
-- No `Serialize`/`Deserialize` derives on IR types (keeps deps minimal; use `FromCopyBatch`/`ToCopyBatch` instead)
+- `PgValue` is the **only** format-agnostic data model; downstream crates map `PgValue` ↔ JSON/Arrow/etc.
+- `PgJson`/`PgJsonb` store raw UTF-8 strings (no `serde_json` dependency); parse in format crates via `serde_json::from_str`.
+- Optional **`serde` feature** adds `Serialize`/`Deserialize` derives on public IR types; default build has no serde dependency.
 
 ---
 
@@ -293,16 +295,16 @@ Following the **serde model**: trait definitions live in the core crate; format 
 
 ```rust
 /// Convert from IR to a native format representation.
-pub trait FromCopyBatch {
+pub trait FromPgBatch {
     type Output;
     type Error;
-    fn from_copy_batch(schema: &Schema, batch: &CopyBatch) -> Result<Self::Output, Self::Error>;
+    fn from_pg_batch(schema: &Schema, batch: &PgBatch) -> Result<Self::Output, Self::Error>;
 }
 
 /// Convert from a native format representation to IR.
-pub trait ToCopyBatch {
+pub trait ToPgBatch {
     type Error;
-    fn to_copy_batch(&self, schema: &Schema) -> Result<CopyBatch, Self::Error>;
+    fn to_pg_batch(&self, schema: &Schema) -> Result<PgBatch, Self::Error>;
 }
 ```
 
@@ -315,12 +317,12 @@ Design notes:
 
 ```rust
 // In pgpolymorph-json (separate crate):
-impl FromCopyBatch for serde_json::Value { /* ... */ }
-impl ToCopyBatch for serde_json::Value { /* ... */ }
+impl FromPgBatch for serde_json::Value { /* ... */ }
+impl ToPgBatch for serde_json::Value { /* ... */ }
 
 // User's custom format crate:
-impl FromCopyBatch for MyOutput { /* ... */ }
-impl ToCopyBatch for MyInput { /* ... */ }
+impl FromPgBatch for MyOutput { /* ... */ }
+impl ToPgBatch for MyInput { /* ... */ }
 ```
 
 ### Full pipeline (across crates)
@@ -328,13 +330,13 @@ impl ToCopyBatch for MyInput { /* ... */ }
 ```mermaid
 flowchart LR
     Binary[COPY binary blob]
-    IR[CopyBatch / Value IR]
+    IR[PgBatch / PgValue IR]
     Native[JSON / Arrow / custom type]
 
     Binary -->|"pgpolymorph_ir::decode"| IR
     IR -->|"pgpolymorph_ir::encode"| Binary
-    IR -->|"FromCopyBatch"| Native
-    Native -->|"ToCopyBatch"| IR
+    IR -->|"FromPgBatch"| Native
+    Native -->|"ToPgBatch"| IR
 ```
 
 No trait implementations for JSON, Arrow, or any external format appear in `pgpolymorph-ir`.
@@ -358,20 +360,26 @@ Binary framing layer validates: magic, footer sentinel, field_count consistency,
 
 ### `codec/` — typed payload codec
 
-Internal (crate-private) functions:
+`FieldDecoder` and `FieldEncoder` carry `column`, `ty`, and `nullable` so all decode/encode errors include real column names and expected types.
 
 ```rust
 // decode.rs
-pub(crate) fn decode_field(ty: &PgType, cell: &FieldCell<'_>) -> Result<Value, Error>;
-pub(crate) fn decode_array_element(ty: &PgType, cell: &FieldCell<'_>) -> Result<Value, Error>;
+pub(crate) struct FieldDecoder<'a> { column: &'a str, ty: &'a PgType, nullable: bool }
+impl FieldDecoder<'_> {
+    pub(crate) fn decode(&self, cell: &FieldCell<'_>) -> Result<PgValue, Error>;
+    fn ensure_min_payload_len(&self, payload: &[u8], min: usize, reason: &'static str) -> Result<()>;
+}
 
 // encode.rs
-pub(crate) fn encode_field(value: &Value, ty: &PgType) -> Result<EncodedField, Error>;
+pub(crate) struct FieldEncoder<'a> { column: &'a str, ty: &'a PgType, nullable: bool }
+impl FieldEncoder<'_> {
+    pub(crate) fn encode(&self, value: &PgValue) -> Result<EncodedField, Error>;
+}
 ```
 
 `EncodedField` is a small owned buffer `{ length: i32, payload: Vec<u8> }` or an enum distinguishing Null vs NonNull.
 
-Array logic in [`codec/array.rs`](src/codec/array.rs): parse/write array header (`ndim` dimension pairs + element OID) + flat row-major element decode via `decode_field`.
+Array logic in [`codec/array.rs`](src/codec/array.rs): parse/write array header (`ndim` dimension pairs + element OID) + flat row-major element decode via `FieldDecoder`/`FieldEncoder`.
 
 ### Top-level public API — [`lib.rs`](src/lib.rs)
 
@@ -379,23 +387,23 @@ The public surface is intentionally small: two primary directions, plus optional
 
 ```rust
 /// Binary blob + Schema → IR
-pub fn decode(schema: &Schema, binary: &[u8]) -> Result<CopyBatch, Error>;
+pub fn decode(schema: &Schema, binary: &[u8]) -> Result<PgBatch, Error>;
 
 /// IR + Schema → binary blob
-pub fn encode(schema: &Schema, batch: &CopyBatch) -> Result<Vec<u8>, Error>;
+pub fn encode(schema: &Schema, batch: &PgBatch) -> Result<Vec<u8>, Error>;
 
 /// Incremental decode for large in-memory blobs (same format, row-at-a-time).
 pub struct Decoder<'a> { /* holds schema + PgBinaryReader */ }
 impl<'a> Decoder<'a> {
     pub fn new(schema: &'a Schema, binary: &'a [u8]) -> Result<Self, Error>;
-    pub fn next_row(&mut self) -> Result<Option<Row>, Error>;
+    pub fn next_row(&mut self) -> Result<Option<PgRow>, Error>;
 }
 
 /// Incremental encode (build blob row-at-a-time).
 pub struct Encoder { /* holds schema + PgBinaryWriter */ }
 impl Encoder {
     pub fn new(schema: &Schema) -> Self;
-    pub fn write_row(&mut self, row: &Row) -> Result<(), Error>;
+    pub fn write_row(&mut self, row: &PgRow) -> Result<(), Error>;
     pub fn finish(self) -> Result<Vec<u8>, Error>;
 }
 ```
@@ -405,9 +413,9 @@ Aliases `decode_copy_binary` / `encode_copy_binary` may be kept for clarity but 
 Validation rules (document in API docs, enforce at implementation time):
 
 - `schema.columns.len()` must equal each tuple's `field_count`
-- Each `Row.values.len()` must match schema column count
-- Non-null `Value` variant must match column `PgType` on encode
-- Nullable columns may be `Value::Null`; non-nullable columns must not
+- Each `PgRow.values.len()` must match schema column count
+- Non-null `PgValue` variant must match column `PgType` on encode
+- Nullable columns may be `PgValue::Null`; non-nullable columns must not
 
 ---
 
@@ -441,7 +449,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 Explicitly out of scope for `pgpolymorph-ir`:
 
 - **No pgwire protocol** — no message parsing, no CopyData framing, no connection lifecycle; a future `pgpolymorph-pgwire` (or similar) crate strips/assembles blobs and hands them here
-- **No trait implementations for external formats** — `FromCopyBatch`/`ToCopyBatch` defs only; JSON/Arrow/etc. impls in separate crates
+- **No trait implementations for external formats** — `FromPgBatch`/`ToPgBatch` defs only; JSON/Arrow/etc. impls in separate crates
 - **No schema discovery** from PostgreSQL catalog — caller supplies `Schema`
 - **No `FORMAT text`** — binary file format only
 - **No libpq / network I/O** — accepts `&[u8]`, returns `Vec<u8>`

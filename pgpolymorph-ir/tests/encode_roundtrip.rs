@@ -3,7 +3,7 @@
 mod utils;
 
 use pgpolymorph_ir::value::pgtypes;
-use pgpolymorph_ir::value::{CopyBatch, Row, Value};
+use pgpolymorph_ir::value::{PgBatch, PgRow, PgValue};
 use pgpolymorph_ir::{decode, encode};
 
 macro_rules! roundtrip_test {
@@ -52,13 +52,13 @@ fn encode_then_decode_matches_original_ir() {
     let fixture = "bool";
     let schema = utils::schema_for_fixture(fixture);
     let original = utils::load_fixture(fixture);
-    let expected_ir = CopyBatch {
+    let expected_ir = PgBatch {
         rows: vec![
-            Row {
-                values: vec![Value::Bool(pgtypes::PgBool::new(true))],
+            PgRow {
+                values: vec![PgValue::Bool(pgtypes::PgBool::new(true))],
             },
-            Row {
-                values: vec![Value::Bool(pgtypes::PgBool::new(false))],
+            PgRow {
+                values: vec![PgValue::Bool(pgtypes::PgBool::new(false))],
             },
         ],
     };

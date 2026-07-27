@@ -1,6 +1,7 @@
 //! Schema types describing column names and PostgreSQL types.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PgType {
     Bool,
     Bytea,
@@ -86,6 +87,7 @@ impl PgType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Column {
     pub name: String,
     pub ty: PgType,
@@ -93,6 +95,7 @@ pub struct Column {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Schema {
     pub columns: Vec<Column>,
 }
