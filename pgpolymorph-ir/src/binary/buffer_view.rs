@@ -18,10 +18,6 @@ impl<'a> BufferView<'a> {
         self.data.len().saturating_sub(self.pos)
     }
 
-    pub fn consumed(&self) -> usize {
-        self.pos
-    }
-
     pub fn read_bytes(&mut self, n: usize) -> Result<&'a [u8]> {
         if self.pos + n > self.data.len() {
             return Err(Error::UnexpectedEof {
@@ -91,6 +87,11 @@ impl<'a> BufferView<'a> {
         Ok(f64::from_be_bytes(
             self.read_fixed::<{ constants::F64_BYTES }>()?,
         ))
+    }
+
+    /// Advance by `n` bytes and return a view over that span from offset zero.
+    pub fn to_remaining_view(&mut self, n: usize) -> Result<BufferView<'a>> {
+        Ok(BufferView::new(self.read_bytes(n)?))
     }
 
     /// Return all bytes from the current position to the end.

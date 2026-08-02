@@ -1,5 +1,6 @@
 //! Incremental COPY binary blob parser.
 
+use crate::binary::buffer_view::BufferView;
 use crate::binary::constants::{self, FOOTER_SENTINEL};
 use crate::binary::field::{FieldCell, FieldReader};
 use crate::binary::header::PgBinaryHeader;
@@ -13,16 +14,16 @@ pub(crate) struct PgBinaryReader<'a> {
 }
 
 impl<'a> PgBinaryReader<'a> {
-    pub fn new(schema: &'a Schema, data: &'a [u8]) -> Result<Self> {
+    pub fn new(schema: &'a Schema, mut view: BufferView<'a>) -> Result<Self> {
         if schema.columns.len() > i16::MAX as usize {
             return Err(Error::TooManyColumns {
                 max: i16::MAX,
                 got: schema.columns.len(),
             });
         }
-        let (_, offset) = PgBinaryHeader::parse(data)?;
+        PgBinaryHeader::parse(&mut view)?;
         Ok(Self {
-            reader: FieldReader::new(&data[offset..]),
+            reader: FieldReader::from_view(view),
             schema,
             finished: false,
         })

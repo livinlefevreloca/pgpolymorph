@@ -11,9 +11,8 @@ pub(crate) struct PgBinaryHeader {
 }
 
 impl PgBinaryHeader {
-    pub fn parse(data: &[u8]) -> Result<(Self, usize)> {
-        validate_magic(data)?;
-        let mut view = BufferView::new(&data[COPY_MAGIC.len()..]);
+    pub fn parse(view: &mut BufferView<'_>) -> Result<Self> {
+        validate_magic(view)?;
 
         let flags = view.read_i32()?;
         let ext_len = view.read_i32()?;
@@ -23,11 +22,7 @@ impl PgBinaryHeader {
             });
         }
         let extension = view.read_bytes(ext_len as usize)?.to_vec();
-        let consumed = COPY_MAGIC.len() + view.consumed();
-        Ok((
-            PgBinaryHeader { flags, extension },
-            consumed,
-        ))
+        Ok(PgBinaryHeader { flags, extension })
     }
 
     pub fn write_to(buf: &mut Vec<u8>) {
@@ -37,14 +32,9 @@ impl PgBinaryHeader {
     }
 }
 
-fn validate_magic(data: &[u8]) -> Result<()> {
-    if data.len() < COPY_MAGIC.len() {
-        return Err(Error::UnexpectedEof {
-            expected: COPY_MAGIC.len(),
-            available: data.len(),
-        });
-    }
-    if &data[..COPY_MAGIC.len()] != COPY_MAGIC.as_slice() {
+fn validate_magic(view: &mut BufferView<'_>) -> Result<()> {
+    let magic = view.read_bytes(COPY_MAGIC.len())?;
+    if magic != COPY_MAGIC.as_slice() {
         return Err(Error::InvalidMagic);
     }
     Ok(())

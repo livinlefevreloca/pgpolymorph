@@ -22,12 +22,12 @@ pub use value::{
     pg_value_variant_name, PgBatch, PgRow, PgValue,
 };
 
-use binary::{EncodedField, FieldCell, PgBinaryReader, PgBinaryWriter};
+use binary::{BufferView, EncodedField, FieldCell, PgBinaryReader, PgBinaryWriter};
 use codec::{FieldDecoder, FieldEncoder};
 
 /// Decode a PostgreSQL `FORMAT binary` COPY blob into typed IR using the given schema.
 pub fn decode(schema: &Schema, binary: &[u8]) -> Result<PgBatch> {
-    let mut reader = PgBinaryReader::new(schema, binary)?;
+    let mut reader = PgBinaryReader::new(schema, BufferView::new(binary))?;
     let mut rows = Vec::new();
 
     while let Some(cells) = reader.next_tuple_raw()? {
@@ -58,7 +58,7 @@ impl<'a> Decoder<'a> {
     /// Create a decoder positioned after the COPY header.
     pub fn new(schema: &'a Schema, binary: &'a [u8]) -> Result<Self> {
         Ok(Self {
-            reader: PgBinaryReader::new(schema, binary)?,
+            reader: PgBinaryReader::new(schema, BufferView::new(binary))?,
             schema,
         })
     }

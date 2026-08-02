@@ -17,12 +17,6 @@ pub(crate) struct FieldReader<'a> {
 }
 
 impl<'a> FieldReader<'a> {
-    pub fn new(data: &'a [u8]) -> Self {
-        Self {
-            view: BufferView::new(data),
-        }
-    }
-
     pub fn from_view(view: BufferView<'a>) -> Self {
         Self { view }
     }
@@ -38,10 +32,10 @@ impl<'a> FieldReader<'a> {
         if len < 0 {
             return Err(crate::error::Error::FieldTooLarge { len });
         }
-        let payload = self.view.read_bytes(len as usize)?;
+        let payload = self.view.to_remaining_view(len as usize)?;
         Ok(FieldCell {
             is_null: false,
-            payload: BufferView::new(payload),
+            payload,
         })
     }
 }
