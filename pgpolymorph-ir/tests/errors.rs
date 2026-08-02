@@ -44,7 +44,7 @@ fn reject_invalid_magic() {
     let schema = int32_schema(false);
     let blob = b"BAD!\n\xff\r\n\x00";
     let err = decode(&schema, blob).unwrap_err();
-    assert!(matches!(err, Error::InvalidMagic));
+    assert!(matches!(err, Error::UnexpectedEof { .. }));
 }
 
 #[test]

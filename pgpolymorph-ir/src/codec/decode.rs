@@ -1,7 +1,7 @@
 //! Decode PostgreSQL binary field payloads into IR [`PgValue`]s.
 
 use crate::binary::{
-    be, constants, FieldCell, FieldReader, PG_DATE_EPOCH_OFFSET_DAYS, PG_TIMESTAMP_EPOCH_OFFSET_US,
+    be, constants, BufferView, FieldCell, PG_DATE_EPOCH_OFFSET_DAYS, PG_TIMESTAMP_EPOCH_OFFSET_US,
 };
 use crate::codec::array::decode_array;
 use crate::error::{Error, Result};
@@ -71,39 +71,32 @@ impl<'a> FieldDecoder<'a> {
         match self.ty {
             PgType::Bool => self.decode_bool(payload),
             PgType::Bytea => Ok(PgValue::Bytea(pgtypes::PgBytea::new(payload.to_vec()))),
-            PgType::Char => Ok(PgValue::Char(pgtypes::PgChar::new(self.read_i16(
-                payload,
-                constants::CHAR_PAYLOAD_BYTES,
-            )?))),
-            PgType::Int2 => Ok(PgValue::Int2(pgtypes::PgInt2::new(self.read_i16(
-                payload,
-                constants::INT2_PAYLOAD_BYTES,
-            )?))),
-            PgType::Int4 => Ok(PgValue::Int4(pgtypes::PgInt4::new(self.read_i32(
-                payload,
-                constants::INT4_PAYLOAD_BYTES,
-            )?))),
-            PgType::Int8 => Ok(PgValue::Int8(pgtypes::PgInt8::new(self.read_i64(
-                payload,
-                constants::INT8_PAYLOAD_BYTES,
-            )?))),
-            PgType::Float4 => Ok(PgValue::Float4(pgtypes::PgFloat4::new(self.read_f32(
-                payload,
-                constants::FLOAT4_PAYLOAD_BYTES,
-            )?))),
-            PgType::Float8 => Ok(PgValue::Float8(pgtypes::PgFloat8::new(self.read_f64(
-                payload,
-                constants::FLOAT8_PAYLOAD_BYTES,
-            )?))),
+            PgType::Char => Ok(PgValue::Char(pgtypes::PgChar::new(
+                self.view(payload, constants::CHAR_PAYLOAD_BYTES)?.read_i16()?,
+            ))),
+            PgType::Int2 => Ok(PgValue::Int2(pgtypes::PgInt2::new(
+                self.view(payload, constants::INT2_PAYLOAD_BYTES)?.read_i16()?,
+            ))),
+            PgType::Int4 => Ok(PgValue::Int4(pgtypes::PgInt4::new(
+                self.view(payload, constants::INT4_PAYLOAD_BYTES)?.read_i32()?,
+            ))),
+            PgType::Int8 => Ok(PgValue::Int8(pgtypes::PgInt8::new(
+                self.view(payload, constants::INT8_PAYLOAD_BYTES)?.read_i64()?,
+            ))),
+            PgType::Float4 => Ok(PgValue::Float4(pgtypes::PgFloat4::new(
+                self.view(payload, constants::FLOAT4_PAYLOAD_BYTES)?.read_f32()?,
+            ))),
+            PgType::Float8 => Ok(PgValue::Float8(pgtypes::PgFloat8::new(
+                self.view(payload, constants::FLOAT8_PAYLOAD_BYTES)?.read_f64()?,
+            ))),
             PgType::Text => Ok(PgValue::Text(pgtypes::PgText::new(self.utf8_text(payload)?))),
             PgType::Name => Ok(PgValue::Name(pgtypes::PgName::new(self.utf8_text(payload)?))),
             PgType::Json => Ok(PgValue::Json(pgtypes::PgJson::new(self.utf8_text(payload)?))),
             PgType::Jsonb => self.decode_jsonb(payload),
             PgType::Date => self.decode_date(payload),
-            PgType::Time => Ok(PgValue::Time(pgtypes::PgTime::new(self.read_i64(
-                payload,
-                constants::TIME_PAYLOAD_BYTES,
-            )?))),
+            PgType::Time => Ok(PgValue::Time(pgtypes::PgTime::new(
+                self.view(payload, constants::TIME_PAYLOAD_BYTES)?.read_i64()?,
+            ))),
             PgType::Timestamp => self.decode_timestamp(payload),
             PgType::Timestamptz => self.decode_timestamptz(payload),
             PgType::Timetz => self.decode_timetz(payload),
@@ -114,14 +107,12 @@ impl<'a> FieldDecoder<'a> {
                 self.ty,
             )?)),
             PgType::Uuid => self.decode_uuid(payload),
-            PgType::Money => Ok(PgValue::Money(pgtypes::PgMoney::new(self.read_i64(
-                payload,
-                constants::MONEY_PAYLOAD_BYTES,
-            )?))),
-            PgType::Oid => Ok(PgValue::Oid(pgtypes::PgOid::new(self.read_u32(
-                payload,
-                constants::OID_PAYLOAD_BYTES,
-            )?))),
+            PgType::Money => Ok(PgValue::Money(pgtypes::PgMoney::new(
+                self.view(payload, constants::MONEY_PAYLOAD_BYTES)?.read_i64()?,
+            ))),
+            PgType::Oid => Ok(PgValue::Oid(pgtypes::PgOid::new(
+                self.view(payload, constants::OID_PAYLOAD_BYTES)?.read_u32()?,
+            ))),
             PgType::Array(_) => Err(Error::UnsupportedType(self.ty.clone())),
         }
     }
@@ -134,48 +125,47 @@ impl<'a> FieldDecoder<'a> {
     fn decode_jsonb(&self, payload: &[u8]) -> Result<PgValue> {
         // A jsonb payload is at least one format-version byte followed by JSON bytes.
         self.ensure_min_payload_len(payload, constants::JSONB_VERSION_BYTES, "jsonb payload too short")?;
-        let mut reader = FieldReader::new(payload);
-        let version = reader.read_u8()?;
-        let json = self.utf8_text(reader.read_rest()?)?;
+        let mut view = BufferView::new(payload);
+        let version = view.read_u8()?;
+        let json = self.utf8_text(view.read_rest()?)?;
         Ok(PgValue::Jsonb(pgtypes::PgJsonb::new(version, json)))
     }
 
     fn decode_date(&self, payload: &[u8]) -> Result<PgValue> {
-        let pg_days = self.read_i32(payload, constants::DATE_PAYLOAD_BYTES)?;
+        let pg_days = self.view(payload, constants::DATE_PAYLOAD_BYTES)?.read_i32()?;
         Ok(PgValue::Date(pgtypes::PgDate::new(
             pg_days + PG_DATE_EPOCH_OFFSET_DAYS,
         )))
     }
 
     fn decode_timestamp(&self, payload: &[u8]) -> Result<PgValue> {
-        let pg_micros = self.read_i64(payload, constants::TIMESTAMP_PAYLOAD_BYTES)?;
+        let pg_micros = self.view(payload, constants::TIMESTAMP_PAYLOAD_BYTES)?.read_i64()?;
         Ok(PgValue::Timestamp(pgtypes::PgTimestamp::new(
             pg_micros + PG_TIMESTAMP_EPOCH_OFFSET_US,
         )))
     }
 
     fn decode_timestamptz(&self, payload: &[u8]) -> Result<PgValue> {
-        let pg_micros = self.read_i64(payload, constants::TIMESTAMPTZ_PAYLOAD_BYTES)?;
+        let pg_micros = self.view(payload, constants::TIMESTAMPTZ_PAYLOAD_BYTES)?.read_i64()?;
         Ok(PgValue::Timestamptz(pgtypes::PgTimestamptz::new(
             pg_micros + PG_TIMESTAMP_EPOCH_OFFSET_US,
         )))
     }
 
     fn decode_timetz(&self, payload: &[u8]) -> Result<PgValue> {
-        let mut reader = FieldReader::new(self.exact(payload, constants::TIMETZ_PAYLOAD_BYTES)?);
+        let mut view = BufferView::new(self.exact(payload, constants::TIMETZ_PAYLOAD_BYTES)?);
         Ok(PgValue::Timetz(pgtypes::PgTimetz::new(
-            reader.read_i64()?,
-            reader.read_i32()?,
+            view.read_i64()?,
+            view.read_i32()?,
         )))
     }
 
     fn decode_interval(&self, payload: &[u8]) -> Result<PgValue> {
-        let mut reader =
-            FieldReader::new(self.exact(payload, constants::INTERVAL_PAYLOAD_BYTES)?);
+        let mut view = BufferView::new(self.exact(payload, constants::INTERVAL_PAYLOAD_BYTES)?);
         Ok(PgValue::Interval(pgtypes::PgInterval::new(
-            reader.read_i64()?,
-            reader.read_i32()?,
-            reader.read_i32()?,
+            view.read_i64()?,
+            view.read_i32()?,
+            view.read_i32()?,
         )))
     }
 
@@ -195,28 +185,8 @@ impl<'a> FieldDecoder<'a> {
         Ok(payload)
     }
 
-    fn read_i16(&self, payload: &[u8], len: usize) -> Result<i16> {
-        Ok(be::read_be_i16(self.exact(payload, len)?).expect("exact length guarantees parse"))
-    }
-
-    fn read_i32(&self, payload: &[u8], len: usize) -> Result<i32> {
-        Ok(be::read_be_i32(self.exact(payload, len)?).expect("exact length guarantees parse"))
-    }
-
-    fn read_i64(&self, payload: &[u8], len: usize) -> Result<i64> {
-        Ok(be::read_be_i64(self.exact(payload, len)?).expect("exact length guarantees parse"))
-    }
-
-    fn read_u32(&self, payload: &[u8], len: usize) -> Result<u32> {
-        Ok(be::read_be_u32(self.exact(payload, len)?).expect("exact length guarantees parse"))
-    }
-
-    fn read_f32(&self, payload: &[u8], len: usize) -> Result<f32> {
-        Ok(be::read_be_f32(self.exact(payload, len)?).expect("exact length guarantees parse"))
-    }
-
-    fn read_f64(&self, payload: &[u8], len: usize) -> Result<f64> {
-        Ok(be::read_be_f64(self.exact(payload, len)?).expect("exact length guarantees parse"))
+    fn view<'b>(&self, payload: &'b [u8], len: usize) -> Result<BufferView<'b>> {
+        Ok(BufferView::new(self.exact(payload, len)?))
     }
 
     fn utf8_text(&self, payload: &[u8]) -> Result<String> {

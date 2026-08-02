@@ -1,4 +1,4 @@
-use crate::binary::FieldReader;
+use crate::binary::BufferView;
 use crate::binary::constants;
 use crate::error::{Error, Result};
 use crate::schema::PgType;
@@ -69,19 +69,19 @@ pub(crate) fn decode_numeric(payload: &[u8], column: &str, ty: &PgType) -> Resul
         return Err(invalid_payload(column, ty, "numeric payload too short"));
     }
 
-    let mut reader = FieldReader::new(payload);
-    let ndigits = reader.read_i16()?;
-    let weight = reader.read_i16()?;
-    let sign = decode_sign(reader.read_i16()?, column, ty)?;
-    let dscale = reader.read_i16()?;
+    let mut view = BufferView::new(payload);
+    let ndigits = view.read_i16()?;
+    let weight = view.read_i16()?;
+    let sign = decode_sign(view.read_i16()?, column, ty)?;
+    let dscale = view.read_i16()?;
 
     let digit_count = ndigits.max(0) as usize;
     let mut digits = Vec::with_capacity(digit_count);
     for _ in 0..digit_count {
-        digits.push(reader.read_i16()?);
+        digits.push(view.read_i16()?);
     }
 
-    if reader.remaining() != 0 {
+    if view.remaining() != 0 {
         return Err(invalid_payload(column, ty, "numeric payload length mismatch"));
     }
 

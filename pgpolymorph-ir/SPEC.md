@@ -49,14 +49,14 @@ pgpolymorph/
         ├── binary/            # COPY binary FILE format (NOT pgwire)
         │   ├── mod.rs
         │   ├── be.rs          # big-endian slice reads
+        │   ├── buffer_view.rs # cursor over bytes with consumed tracking
         │   ├── constants.rs   # magic bytes, payload sizes, COPY envelope constants
-        │   ├── field.rs       # FieldCell (length + payload envelope)
+        │   ├── field.rs       # FieldCell + FieldReader (COPY field envelope)
         │   ├── header.rs      # PgBinaryHeader parse/write
         │   ├── reader.rs      # PgBinaryReader (incremental blob parse)
         │   └── writer.rs      # PgBinaryWriter (incremental blob write)
         └── codec/
             ├── mod.rs
-            ├── oid.rs         # OID constants + oid → PgType
             ├── decode.rs      # FieldDecoder: payload bytes → PgValue (per PgType)
             ├── encode.rs      # FieldEncoder: PgValue → payload bytes (per PgType)
             └── array.rs       # array header + element iteration
@@ -233,7 +233,7 @@ pub struct Schema {
 }
 ```
 
-`PgType::oid()` and `PgType::from_oid(u32)` live in [`codec/oid.rs`](src/codec/oid.rs). Unknown OIDs are a decode error in v1 (no `Unknown` variant yet — keeps spec tight; add later if needed).
+`PgType::oid()` and `PgType::from_oid(u32)` live in [`schema.rs`](src/schema.rs). Unknown OIDs are a decode error in v1 (no `Unknown` variant yet — keeps spec tight; add later if needed).
 
 ### Value layer — [`value/mod.rs`](src/value/mod.rs)
 

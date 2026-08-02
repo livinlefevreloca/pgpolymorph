@@ -3,7 +3,6 @@
 use crate::binary::{be, constants, FieldCell, FieldReader};
 use crate::codec::decode::FieldDecoder;
 use crate::codec::encode::FieldEncoder;
-use crate::codec::oid::oid_to_pg_type;
 use crate::error::{Error, Result};
 use crate::schema::PgType;
 use crate::value::pgtypes;
@@ -32,7 +31,7 @@ pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: &FieldCell<'_>) -> 
 
     let has_nulls = reader.read_i32()?;
     let element_oid = reader.read_i32()? as u32;
-    let payload_element_ty = oid_to_pg_type(element_oid).ok_or_else(|| {
+    let payload_element_ty = PgType::from_oid(element_oid).ok_or_else(|| {
         Error::UnsupportedType(PgType::Array(Box::new(element_ty.clone())))
     })?;
 
