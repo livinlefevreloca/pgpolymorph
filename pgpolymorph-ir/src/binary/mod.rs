@@ -1,4 +1,3 @@
-pub(crate) mod be;
 pub(crate) mod buffer_view;
 pub(crate) mod constants;
 mod field;

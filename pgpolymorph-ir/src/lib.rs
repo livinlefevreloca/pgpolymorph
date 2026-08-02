@@ -31,7 +31,7 @@ pub fn decode(schema: &Schema, binary: &[u8]) -> Result<PgBatch> {
     let mut rows = Vec::new();
 
     while let Some(cells) = reader.next_tuple_raw()? {
-        rows.push(decode_row(schema, &cells)?);
+        rows.push(decode_row(schema, cells)?);
     }
 
     reader.ensure_finished()?;
@@ -66,7 +66,7 @@ impl<'a> Decoder<'a> {
     /// Decode the next row, or `None` after the footer sentinel.
     pub fn next_row(&mut self) -> Result<Option<PgRow>> {
         match self.reader.next_tuple_raw()? {
-            Some(cells) => Ok(Some(decode_row(self.schema, &cells)?)),
+            Some(cells) => Ok(Some(decode_row(self.schema, cells)?)),
             None => {
                 self.reader.ensure_finished()?;
                 Ok(None)
@@ -110,9 +110,9 @@ impl<'a> Encoder<'a> {
     }
 }
 
-fn decode_row(schema: &Schema, cells: &[FieldCell<'_>]) -> Result<PgRow> {
+fn decode_row(schema: &Schema, cells: Vec<FieldCell<'_>>) -> Result<PgRow> {
     let mut values = Vec::with_capacity(schema.columns.len());
-    for (column, cell) in schema.columns.iter().zip(cells.iter()) {
+    for (column, cell) in schema.columns.iter().zip(cells) {
         values.push(
             FieldDecoder::new(&column.name, &column.ty, column.nullable).decode(cell)?,
         );

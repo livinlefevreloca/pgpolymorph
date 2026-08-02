@@ -56,20 +56,24 @@ const NUMERIC_POS: i16 = 0x0000;
 const NUMERIC_NEG: i16 = 0x4000;
 const NUMERIC_NAN: i16 = 0xC000u16 as i16;
 
-pub(crate) fn decode_numeric(payload: &[u8], column: &str, ty: &PgType) -> Result<PgNumeric> {
-    if payload.is_empty() {
+pub(crate) fn decode_numeric(
+    mut view: BufferView<'_>,
+    column: &str,
+    ty: &PgType,
+) -> Result<PgNumeric> {
+    if view.remaining() == 0 {
         return Err(invalid_payload(column, ty, "numeric payload too short"));
     }
 
     // Some fixtures use a truncated all-zero header for numeric zero.
-    if payload.len() < constants::NUMERIC_HEADER_BYTES {
-        if payload.iter().all(|&b| b == 0) {
+    if view.remaining() < constants::NUMERIC_HEADER_BYTES {
+        let rest = view.read_rest()?;
+        if rest.iter().all(|&b| b == 0) {
             return Ok(PgNumeric::zero());
         }
         return Err(invalid_payload(column, ty, "numeric payload too short"));
     }
 
-    let mut view = BufferView::new(payload);
     let ndigits = view.read_i16()?;
     let weight = view.read_i16()?;
     let sign = decode_sign(view.read_i16()?, column, ty)?;

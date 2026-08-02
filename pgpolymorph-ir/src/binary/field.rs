@@ -1,4 +1,4 @@
-//! Field envelope: `int32` length prefix + optional payload.
+//! COPY binary field envelope: `int32` length prefix + optional payload.
 
 use std::ops::{Deref, DerefMut};
 
@@ -8,9 +8,10 @@ use crate::binary::constants;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FieldCell<'a> {
     pub is_null: bool,
-    pub payload: &'a [u8],
+    pub payload: BufferView<'a>,
 }
 
+/// Cursor over a COPY tuple stream (field count + length-prefixed fields).
 pub(crate) struct FieldReader<'a> {
     view: BufferView<'a>,
 }
@@ -22,8 +23,8 @@ impl<'a> FieldReader<'a> {
         }
     }
 
-    pub fn remaining(&self) -> usize {
-        self.view.remaining()
+    pub fn from_view(view: BufferView<'a>) -> Self {
+        Self { view }
     }
 
     pub fn read_field(&mut self) -> crate::error::Result<FieldCell<'a>> {
@@ -31,7 +32,7 @@ impl<'a> FieldReader<'a> {
         if len == i64::from(constants::COPY_FIELD_NULL) {
             return Ok(FieldCell {
                 is_null: true,
-                payload: &[],
+                payload: BufferView::new(&[]),
             });
         }
         if len < 0 {
@@ -40,7 +41,7 @@ impl<'a> FieldReader<'a> {
         let payload = self.view.read_bytes(len as usize)?;
         Ok(FieldCell {
             is_null: false,
-            payload,
+            payload: BufferView::new(payload),
         })
     }
 }

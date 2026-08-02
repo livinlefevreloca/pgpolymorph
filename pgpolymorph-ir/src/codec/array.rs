@@ -1,6 +1,6 @@
 //! PostgreSQL array binary format decode/encode.
 
-use crate::binary::{be, constants, FieldCell, FieldReader};
+use crate::binary::{constants, BufferView, FieldCell, FieldReader};
 use crate::codec::decode::FieldDecoder;
 use crate::codec::encode::FieldEncoder;
 use crate::error::{Error, Result};
@@ -8,7 +8,7 @@ use crate::schema::PgType;
 use crate::value::pgtypes;
 use crate::value::PgValue;
 
-pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: &FieldCell<'_>) -> Result<PgValue> {
+pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: FieldCell<'_>) -> Result<PgValue> {
     let array_ty = decoder.ty();
     let element_ty = match array_ty {
         PgType::Array(inner) => inner.as_ref(),
@@ -21,16 +21,15 @@ pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: &FieldCell<'_>) -> 
         return Ok(PgValue::Null);
     }
 
-    let body = strip_optional_total_len(decoder, cell.payload)?;
+    let mut view = strip_optional_total_len(decoder, cell.payload)?;
 
-    let mut reader = FieldReader::new(body);
-    let ndim = reader.read_i32()?;
+    let ndim = view.read_i32()?;
     if ndim < constants::ARRAY_MIN_NDIM {
         return Err(decoder.invalid_payload("array ndim must be at least 1"));
     }
 
-    let has_nulls = reader.read_i32()?;
-    let element_oid = reader.read_i32()? as u32;
+    let has_nulls = view.read_i32()?;
+    let element_oid = view.read_i32()? as u32;
     let payload_element_ty = PgType::from_oid(element_oid).ok_or_else(|| {
         Error::UnsupportedType(PgType::Array(Box::new(element_ty.clone())))
     })?;
@@ -43,7 +42,7 @@ pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: &FieldCell<'_>) -> 
         });
     }
 
-    let (dimensions, total_elements) = parse_dimensions(decoder, &mut reader, ndim)?;
+    let (dimensions, total_elements) = parse_dimensions(decoder, &mut view, ndim)?;
 
     if has_nulls != constants::ARRAY_HAS_NULLS_FALSE
         && has_nulls != constants::ARRAY_HAS_NULLS_TRUE
@@ -55,9 +54,10 @@ pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: &FieldCell<'_>) -> 
     }
 
     let element_decoder = FieldDecoder::new(decoder.column(), element_ty, true);
+    let mut reader = FieldReader::from_view(view);
     let mut elements = Vec::with_capacity(total_elements);
     for _ in 0..total_elements {
-        elements.push(element_decoder.decode_array_element(&reader.read_field()?)?);
+        elements.push(element_decoder.decode_array_element(reader.read_field()?)?);
     }
 
     Ok(PgValue::Array(pgtypes::PgArray::new(
@@ -69,14 +69,14 @@ pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: &FieldCell<'_>) -> 
 
 fn parse_dimensions(
     decoder: &FieldDecoder<'_>,
-    reader: &mut FieldReader<'_>,
+    view: &mut BufferView<'_>,
     ndim: i32,
 ) -> Result<(Vec<pgtypes::ArrayDimension>, usize)> {
     let mut dimensions = Vec::with_capacity(ndim as usize);
     let mut total_elements = 1i64;
     for _ in 0..ndim {
-        let length = reader.read_i32()?;
-        let lower_bound = reader.read_i32()?;
+        let length = view.read_i32()?;
+        let lower_bound = view.read_i32()?;
         if length < 0 {
             return Err(decoder.invalid_payload("negative array dimension length"));
         }
@@ -97,20 +97,18 @@ fn parse_dimensions(
 
 fn strip_optional_total_len<'a>(
     decoder: &FieldDecoder<'_>,
-    payload: &'a [u8],
-) -> Result<&'a [u8]> {
-    decoder.ensure_min_payload_len(
-        payload,
+    mut view: BufferView<'a>,
+) -> Result<BufferView<'a>> {
+    decoder.ensure_min_remaining(
+        &view,
         constants::ARRAY_TOTAL_LEN_BYTES,
         "array payload too short",
     )?;
-    let total_len =
-        be::read_be_i32(&payload[..constants::ARRAY_TOTAL_LEN_BYTES]).unwrap_or(0) as usize;
-    if total_len == payload.len().saturating_sub(constants::ARRAY_TOTAL_LEN_BYTES) {
-        Ok(&payload[constants::ARRAY_TOTAL_LEN_BYTES..])
-    } else {
-        Ok(payload)
+    let total_len = view.peek_i32()? as usize;
+    if total_len == view.remaining().saturating_sub(constants::ARRAY_TOTAL_LEN_BYTES) {
+        view.read_i32()?;
     }
+    Ok(view)
 }
 
 pub(crate) fn encode_array(encoder: &FieldEncoder<'_>, value: &PgValue) -> Result<Vec<u8>> {

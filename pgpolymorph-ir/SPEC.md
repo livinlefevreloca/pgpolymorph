@@ -48,10 +48,9 @@ pgpolymorph/
         ├── traits.rs          # FromPgBatch, ToPgBatch (trait defs only — no impls)
         ├── binary/            # COPY binary FILE format (NOT pgwire)
         │   ├── mod.rs
-        │   ├── be.rs          # big-endian slice reads
-        │   ├── buffer_view.rs # cursor over bytes with consumed tracking
+        │   ├── buffer_view.rs # all binary parsing (cursor + typed reads)
         │   ├── constants.rs   # magic bytes, payload sizes, COPY envelope constants
-        │   ├── field.rs       # FieldCell + FieldReader (COPY field envelope)
+        │   ├── field.rs       # FieldCell, FieldReader (COPY field envelope)
         │   ├── header.rs      # PgBinaryHeader parse/write
         │   ├── reader.rs      # PgBinaryReader (incremental blob parse)
         │   └── writer.rs      # PgBinaryWriter (incremental blob write)
@@ -352,7 +351,7 @@ Handles the file-format container only. Assumes the caller passes a complete blo
 | Type | Role |
 |------|------|
 | `PgBinaryHeader` | Parsed header (flags, extension bytes) |
-| `FieldCell<'a>` | `{ is_null: bool, payload: &'a [u8] }` — zero-copy view into input |
+| `FieldCell<'a>` | `{ is_null: bool, payload: BufferView<'a> }` — zero-copy view into input |
 | `PgBinaryReader<'a>` | Iterator over tuples; yields `Vec<FieldCell<'a>>` per row |
 | `PgBinaryWriter` | Writes header, tuples (from raw cells or via typed path), footer |
 
@@ -367,7 +366,7 @@ Binary framing layer validates: magic, footer sentinel, field_count consistency,
 pub(crate) struct FieldDecoder<'a> { column: &'a str, ty: &'a PgType, nullable: bool }
 impl FieldDecoder<'_> {
     pub(crate) fn decode(&self, cell: &FieldCell<'_>) -> Result<PgValue, Error>;
-    fn ensure_min_payload_len(&self, payload: &[u8], min: usize, reason: &'static str) -> Result<()>;
+    fn ensure_min_remaining(&self, view: &BufferView<'_>, min: usize, reason: &'static str) -> Result<()>;
 }
 
 // encode.rs
