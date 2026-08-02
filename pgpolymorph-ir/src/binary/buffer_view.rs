@@ -123,3 +123,9 @@ impl<'a> BufferView<'a> {
         ))
     }
 }
+
+impl BufferView<'static> {
+    pub fn empty() -> Self {
+        Self { data: &[], pos: 0 }
+    }
+}

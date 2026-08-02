@@ -26,7 +26,7 @@ impl<'a> FieldReader<'a> {
         if len == i64::from(constants::COPY_FIELD_NULL) {
             return Ok(FieldCell {
                 is_null: true,
-                payload: BufferView::new(&[]),
+                payload: BufferView::empty(),
             });
         }
         if len < 0 {
