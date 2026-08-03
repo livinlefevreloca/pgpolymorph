@@ -89,9 +89,34 @@ impl<'a> BufferView<'a> {
         ))
     }
 
-    /// Advance by `n` bytes and return a view over that span from offset zero.
-    pub fn to_remaining_view(&mut self, n: usize) -> Result<BufferView<'a>> {
-        Ok(BufferView::new(self.read_bytes(n)?))
+    /// Returns a view over `data[self.pos..end_offset]` without advancing this cursor.
+    ///
+    /// `end_offset` is an exclusive index into this view's backing slice.
+    pub fn project_view(&self, end_offset: usize) -> Result<BufferView<'a>> {
+        if end_offset < self.pos {
+            return Err(Error::UnexpectedEof {
+                expected: self.pos - end_offset,
+                available: 0,
+            });
+        }
+        if end_offset > self.data.len() {
+            return Err(Error::UnexpectedEof {
+                expected: end_offset - self.pos,
+                available: self.remaining(),
+            });
+        }
+        Ok(BufferView::new(&self.data[self.pos..end_offset]))
+    }
+
+    /// Advance by `n` bytes and return a projected view over that span.
+    pub fn take_n_and_project_view(&mut self, n: usize) -> Result<BufferView<'a>> {
+        let end = self.pos.checked_add(n).ok_or(Error::UnexpectedEof {
+            expected: n,
+            available: self.remaining(),
+        })?;
+        let view = self.project_view(end)?;
+        self.pos = end;
+        Ok(view)
     }
 
     /// Return all bytes from the current position to the end.

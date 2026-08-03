@@ -32,7 +32,7 @@ impl<'a> FieldReader<'a> {
         if len < 0 {
             return Err(crate::error::Error::FieldTooLarge { len });
         }
-        let payload = self.view.to_remaining_view(len as usize)?;
+        let payload = self.view.take_n_and_project_view(len as usize)?;
         Ok(FieldCell {
             is_null: false,
             payload,
