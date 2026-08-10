@@ -146,6 +146,7 @@ PostgreSQL binary send/receive encodings. Schema must declare the type; the bina
 | Int4 | 23 | 4 | `int32` BE |
 | Int8 | 20 | 8 | `int64` BE |
 | Text | 25 | variable | UTF-8, no NUL |
+| Varchar | 1043 | variable | UTF-8, no NUL; max length from schema typmod (`PgType::Varchar(Some(n))`) |
 | Json | 114 | variable | raw UTF-8 JSON text |
 | Jsonb | 3802 | variable | `[u8 version=1][json utf8]` |
 | Float4 | 700 | 4 | IEEE754 BE |
@@ -215,7 +216,7 @@ External schema is **required** for typed decode/encode.
 pub enum PgType {
     Bool, Bytea, Char, Int2, Int4, Int8,
     Float4, Float8,
-    Text, Json, Jsonb,
+    Text, Varchar(Option<u32>), Json, Jsonb,
     Date, Time, Timestamp, Timestamptz, Timetz,
     Interval, Numeric, Uuid, Money, Oid, Name,
     Array(Box<PgType>),
@@ -395,7 +396,10 @@ pub fn encode(schema: &Schema, batch: &PgBatch) -> Result<Vec<u8>, Error>;
 pub struct Decoder<'a> { /* holds schema + PgBinaryReader */ }
 impl<'a> Decoder<'a> {
     pub fn new(schema: &'a Schema, binary: &'a [u8]) -> Result<Self, Error>;
-    pub fn next_row(&mut self) -> Result<Option<PgRow>, Error>;
+}
+impl<'a> Iterator for Decoder<'a> {
+    type Item = Result<PgRow, Error>;
+    // yields rows until footer; final None after successful footer check
 }
 
 /// Incremental encode (build blob row-at-a-time).

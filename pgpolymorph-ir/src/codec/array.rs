@@ -9,7 +9,7 @@ use crate::value::pgtypes;
 use crate::value::PgValue;
 
 pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: FieldCell<'_>) -> Result<PgValue> {
-    let array_ty = decoder.ty();
+    let array_ty = decoder.ty;
     let element_ty = match array_ty {
         PgType::Array(inner) => inner.as_ref(),
         _ => {
@@ -36,7 +36,7 @@ pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: FieldCell<'_>) -> R
 
     if element_ty != &payload_element_ty {
         return Err(Error::ArrayElementOidMismatch {
-            column: decoder.column().to_string(),
+            column: decoder.column.to_string(),
             expected: element_ty.clone(),
             element_oid,
         });
@@ -48,12 +48,12 @@ pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: FieldCell<'_>) -> R
         && has_nulls != constants::ARRAY_HAS_NULLS_TRUE
     {
         return Err(Error::InvalidArrayHasNulls {
-            column: decoder.column().to_string(),
+            column: decoder.column.to_string(),
             got: has_nulls,
         });
     }
 
-    let element_decoder = FieldDecoder::new(decoder.column(), element_ty, true);
+    let element_decoder = FieldDecoder::new(decoder.column, element_ty, true);
     let mut reader = FieldReader::from_view(view);
     let mut elements = Vec::with_capacity(total_elements);
     for _ in 0..total_elements {
@@ -112,7 +112,7 @@ fn strip_optional_total_len<'a>(
 }
 
 pub(crate) fn encode_array(encoder: &FieldEncoder<'_>, value: &PgValue) -> Result<Vec<u8>> {
-    let array_ty = encoder.ty();
+    let array_ty = encoder.ty;
     let element_ty = match array_ty {
         PgType::Array(inner) => inner.as_ref(),
         _ => return Err(encoder.type_mismatch(value)),
@@ -152,7 +152,7 @@ pub(crate) fn encode_array(encoder: &FieldEncoder<'_>, value: &PgValue) -> Resul
         .oid()
         .ok_or_else(|| Error::UnsupportedType(array_ty.clone()))?;
 
-    let element_encoder = FieldEncoder::new(encoder.column(), element_ty, true);
+    let element_encoder = FieldEncoder::new(encoder.column, element_ty, true);
 
     let mut body = Vec::new();
     write_i32(&mut body, ndim as i32);

@@ -89,6 +89,60 @@ impl<'a> BufferView<'a> {
         ))
     }
 
+    fn ensure_exact_remaining(&self, len: usize) -> Result<()> {
+        if self.remaining() != len {
+            return Err(Error::UnexpectedEof {
+                expected: len,
+                available: self.remaining(),
+            });
+        }
+        Ok(())
+    }
+
+    pub fn read_u8_exact(&mut self, len: usize) -> Result<u8> {
+        self.ensure_exact_remaining(len)?;
+        self.read_u8()
+    }
+
+    pub fn read_i16_exact(&mut self, len: usize) -> Result<i16> {
+        self.ensure_exact_remaining(len)?;
+        self.read_i16()
+    }
+
+    pub fn read_i32_exact(&mut self, len: usize) -> Result<i32> {
+        self.ensure_exact_remaining(len)?;
+        self.read_i32()
+    }
+
+    pub fn read_i64_exact(&mut self, len: usize) -> Result<i64> {
+        self.ensure_exact_remaining(len)?;
+        self.read_i64()
+    }
+
+    pub fn read_u32_exact(&mut self, len: usize) -> Result<u32> {
+        self.ensure_exact_remaining(len)?;
+        self.read_u32()
+    }
+
+    pub fn read_f32_exact(&mut self, len: usize) -> Result<f32> {
+        self.ensure_exact_remaining(len)?;
+        self.read_f32()
+    }
+
+    pub fn read_f64_exact(&mut self, len: usize) -> Result<f64> {
+        self.ensure_exact_remaining(len)?;
+        self.read_f64()
+    }
+
+    pub fn read_utf8_rest(&mut self) -> Result<String> {
+        std::str::from_utf8(self.read_rest()?)
+            .map(|s| s.to_string())
+            .map_err(|_| Error::UnexpectedEof {
+                expected: 1,
+                available: 0,
+            })
+    }
+
     /// Returns a view over `data[self.pos..end_offset]` without advancing this cursor.
     ///
     /// `end_offset` is an exclusive index into this view's backing slice.

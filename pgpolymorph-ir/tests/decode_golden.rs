@@ -365,7 +365,7 @@ fn decode_golden_oid() {
 fn decode_golden_numeric() {
     assert_decodes_to(
         "numeric",
-        batch(vec![row(PgValue::Numeric(pgtypes::PgNumeric::zero()))]),
+        batch(vec![row(PgValue::Numeric(pgtypes::PgNumeric::default()))]),
     );
 }
 

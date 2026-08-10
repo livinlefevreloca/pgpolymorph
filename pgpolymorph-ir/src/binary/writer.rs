@@ -37,6 +37,7 @@ impl PgBinaryWriter {
                     }
                 })?;
                 self.write_bytes(&len.to_be_bytes());
+                debug_assert_eq!(constants::COPY_FIELD_LEN_BYTES, len.to_be_bytes().len());
                 self.write_bytes(&payload);
             }
         }

@@ -9,8 +9,8 @@ use crate::value::pgtypes::encode_numeric;
 use crate::value::PgValue;
 
 pub(crate) struct FieldEncoder<'a> {
-    column: &'a str,
-    ty: &'a PgType,
+    pub(crate) column: &'a str,
+    pub(crate) ty: &'a PgType,
     nullable: bool,
 }
 
@@ -54,14 +54,6 @@ impl<'a> FieldEncoder<'a> {
         Ok(ArrayElementEncoding::Payload(self.encode_scalar(value)?))
     }
 
-    pub(crate) fn column(&self) -> &str {
-        self.column
-    }
-
-    pub(crate) fn ty(&self) -> &PgType {
-        self.ty
-    }
-
     pub(crate) fn type_mismatch(&self, value: &PgValue) -> Error {
         Error::TypeMismatch {
             column: self.column.to_string(),
@@ -89,6 +81,14 @@ impl<'a> FieldEncoder<'a> {
             (PgType::Float4, PgValue::Float4(v)) => Ok(v.value.to_be_bytes().to_vec()),
             (PgType::Float8, PgValue::Float8(v)) => Ok(v.value.to_be_bytes().to_vec()),
             (PgType::Text, PgValue::Text(v)) => Ok(v.value.as_bytes().to_vec()),
+            (PgType::Varchar(schema_max), PgValue::Varchar(v)) => {
+                if let Some(max_len) = *schema_max {
+                    if v.value.chars().count() > max_len as usize {
+                        return Err(self.invalid_payload("varchar value exceeds max length"));
+                    }
+                }
+                Ok(v.value.as_bytes().to_vec())
+            }
             (PgType::Name, PgValue::Name(v)) => Ok(v.value.as_bytes().to_vec()),
             (PgType::Json, PgValue::Json(v)) => Ok(v.text.as_bytes().to_vec()),
             (PgType::Jsonb, PgValue::Jsonb(v)) => {
@@ -132,30 +132,31 @@ impl<'a> FieldEncoder<'a> {
 }
 
 fn value_matches_type(value: &PgValue, ty: &PgType) -> bool {
-    matches!(
-        (ty, value),
-        (PgType::Bool, PgValue::Bool(_))
-            | (PgType::Bytea, PgValue::Bytea(_))
-            | (PgType::Char, PgValue::Char(_))
-            | (PgType::Int2, PgValue::Int2(_))
-            | (PgType::Int4, PgValue::Int4(_))
-            | (PgType::Int8, PgValue::Int8(_))
-            | (PgType::Float4, PgValue::Float4(_))
-            | (PgType::Float8, PgValue::Float8(_))
-            | (PgType::Text, PgValue::Text(_))
-            | (PgType::Name, PgValue::Name(_))
-            | (PgType::Json, PgValue::Json(_))
-            | (PgType::Jsonb, PgValue::Jsonb(_))
-            | (PgType::Date, PgValue::Date(_))
-            | (PgType::Time, PgValue::Time(_))
-            | (PgType::Timestamp, PgValue::Timestamp(_))
-            | (PgType::Timestamptz, PgValue::Timestamptz(_))
-            | (PgType::Timetz, PgValue::Timetz(_))
-            | (PgType::Interval, PgValue::Interval(_))
-            | (PgType::Numeric, PgValue::Numeric(_))
-            | (PgType::Uuid, PgValue::Uuid(_))
-            | (PgType::Money, PgValue::Money(_))
-            | (PgType::Oid, PgValue::Oid(_))
-            | (PgType::Array(_), PgValue::Array(_))
-    )
+    match (ty, value) {
+        (PgType::Bool, PgValue::Bool(_)) => true,
+        (PgType::Bytea, PgValue::Bytea(_)) => true,
+        (PgType::Char, PgValue::Char(_)) => true,
+        (PgType::Int2, PgValue::Int2(_)) => true,
+        (PgType::Int4, PgValue::Int4(_)) => true,
+        (PgType::Int8, PgValue::Int8(_)) => true,
+        (PgType::Float4, PgValue::Float4(_)) => true,
+        (PgType::Float8, PgValue::Float8(_)) => true,
+        (PgType::Text, PgValue::Text(_)) => true,
+        (PgType::Varchar(schema_max), PgValue::Varchar(v)) => v.max_len == *schema_max,
+        (PgType::Name, PgValue::Name(_)) => true,
+        (PgType::Json, PgValue::Json(_)) => true,
+        (PgType::Jsonb, PgValue::Jsonb(_)) => true,
+        (PgType::Date, PgValue::Date(_)) => true,
+        (PgType::Time, PgValue::Time(_)) => true,
+        (PgType::Timestamp, PgValue::Timestamp(_)) => true,
+        (PgType::Timestamptz, PgValue::Timestamptz(_)) => true,
+        (PgType::Timetz, PgValue::Timetz(_)) => true,
+        (PgType::Interval, PgValue::Interval(_)) => true,
+        (PgType::Numeric, PgValue::Numeric(_)) => true,
+        (PgType::Uuid, PgValue::Uuid(_)) => true,
+        (PgType::Money, PgValue::Money(_)) => true,
+        (PgType::Oid, PgValue::Oid(_)) => true,
+        (PgType::Array(_), PgValue::Array(_)) => true,
+        _ => false,
+    }
 }

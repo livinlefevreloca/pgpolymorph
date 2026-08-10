@@ -5,8 +5,12 @@ use crate::value::PgValue;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ArrayDimension {
     pub length: i32,
-    /// PostgreSQL array dimension lower bound from the binary header (often `1` for SQL
-    /// arrays, but not always).
+    /// PostgreSQL array dimension lower bound from the binary header.
+    ///
+    /// Each dimension is encoded as `(length, lower_bound)`. SQL arrays commonly use
+    /// lower bound 1, so `ARRAY[10, 20, 30]` is indexed `[1:3]` rather than `[0:2]`.
+    /// Slices and some constructs can produce other bounds; this crate preserves the
+    /// on-wire value verbatim and does not re-index elements to 0-based.
     pub lower_bound: i32,
 }
 

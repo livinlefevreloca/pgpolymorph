@@ -40,8 +40,10 @@ impl PgNumeric {
             digits,
         }
     }
+}
 
-    pub fn zero() -> Self {
+impl Default for PgNumeric {
+    fn default() -> Self {
         Self {
             ndigits: 0,
             weight: 0,
@@ -69,7 +71,7 @@ pub(crate) fn decode_numeric(
     if view.remaining() < constants::NUMERIC_HEADER_BYTES {
         let rest = view.read_rest()?;
         if rest.iter().all(|&b| b == 0) {
-            return Ok(PgNumeric::zero());
+            return Ok(PgNumeric::default());
         }
         return Err(invalid_payload(column, ty, "numeric payload too short"));
     }

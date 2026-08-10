@@ -69,3 +69,69 @@ fn encode_then_decode_matches_original_ir() {
 
     utils::assert_batches_eq(&expected_ir, &again);
 }
+
+#[test]
+fn roundtrip_varchar_unlimited() {
+    use pgpolymorph_ir::schema::{Column, PgType, Schema};
+
+    let schema = Schema {
+        columns: vec![Column {
+            name: "label".to_string(),
+            ty: PgType::Varchar(None),
+            nullable: false,
+        }],
+    };
+    let batch = PgBatch {
+        rows: vec![PgRow {
+            values: vec![PgValue::Varchar(pgtypes::PgVarchar::new("hello", None))],
+        }],
+    };
+
+    let bytes = encode(&schema, &batch).unwrap();
+    let again = decode(&schema, &bytes).unwrap();
+    assert_eq!(batch, again);
+}
+
+#[test]
+fn roundtrip_varchar_with_max_len() {
+    use pgpolymorph_ir::schema::{Column, PgType, Schema};
+
+    let schema = Schema {
+        columns: vec![Column {
+            name: "code".to_string(),
+            ty: PgType::Varchar(Some(5)),
+            nullable: false,
+        }],
+    };
+    let batch = PgBatch {
+        rows: vec![PgRow {
+            values: vec![PgValue::Varchar(pgtypes::PgVarchar::new("abcde", Some(5)))],
+        }],
+    };
+
+    let bytes = encode(&schema, &batch).unwrap();
+    let again = decode(&schema, &bytes).unwrap();
+    assert_eq!(batch, again);
+}
+
+#[test]
+fn reject_varchar_exceeding_max_len_on_encode() {
+    use pgpolymorph_ir::schema::{Column, PgType, Schema};
+    use pgpolymorph_ir::Error;
+
+    let schema = Schema {
+        columns: vec![Column {
+            name: "code".to_string(),
+            ty: PgType::Varchar(Some(3)),
+            nullable: false,
+        }],
+    };
+    let batch = PgBatch {
+        rows: vec![PgRow {
+            values: vec![PgValue::Varchar(pgtypes::PgVarchar::new("abcd", Some(3)))],
+        }],
+    };
+
+    let err = encode(&schema, &batch).unwrap_err();
+    assert!(matches!(err, Error::InvalidPayload { .. }));
+}

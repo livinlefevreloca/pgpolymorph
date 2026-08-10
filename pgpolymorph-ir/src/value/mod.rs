@@ -18,6 +18,7 @@ pub enum PgValue {
     Float4(pgtypes::PgFloat4),
     Float8(pgtypes::PgFloat8),
     Text(pgtypes::PgText),
+    Varchar(pgtypes::PgVarchar),
     Name(pgtypes::PgName),
     Json(pgtypes::PgJson),
     Jsonb(pgtypes::PgJsonb),
@@ -58,6 +59,7 @@ pub fn pg_value_variant_name(value: &PgValue) -> &'static str {
         PgValue::Float4(_) => "Float4",
         PgValue::Float8(_) => "Float8",
         PgValue::Text(_) => "Text",
+        PgValue::Varchar(_) => "Varchar",
         PgValue::Name(_) => "Name",
         PgValue::Json(_) => "Json",
         PgValue::Jsonb(_) => "Jsonb",
@@ -139,6 +141,13 @@ impl PgValue {
     pub fn as_text(&self) -> Option<&pgtypes::PgText> {
         match self {
             PgValue::Text(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_varchar(&self) -> Option<&pgtypes::PgVarchar> {
+        match self {
+            PgValue::Varchar(v) => Some(v),
             _ => None,
         }
     }

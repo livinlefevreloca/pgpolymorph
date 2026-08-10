@@ -1,6 +1,6 @@
 //! Bidirectional converter between PostgreSQL `FORMAT binary` COPY blobs and typed IR.
 //!
-//! See `SPEC.md` in the crate root for wire layout, IR design, and validation rules.
+//! See `SPEC.md` in the crate root for binary layout, IR design, and validation rules.
 
 mod binary;
 pub mod error;
@@ -17,7 +17,7 @@ pub use value::{
     pgtypes::{
         ArrayDimension, NumericSign, PgArray, PgBool, PgBytea, PgChar, PgDate, PgFloat4, PgFloat8,
         PgInt2, PgInt4, PgInt8, PgInterval, PgJson, PgJsonb, PgMoney, PgName, PgNumeric, PgOid,
-        PgText, PgTime, PgTimestamp, PgTimestamptz, PgTimetz, PgUuid,
+        PgText, PgTime, PgTimestamp, PgTimestamptz, PgTimetz, PgUuid, PgVarchar,
     },
     pg_value_variant_name, PgBatch, PgRow, PgValue,
 };
@@ -27,25 +27,20 @@ use codec::{FieldDecoder, FieldEncoder};
 
 /// Decode a PostgreSQL `FORMAT binary` COPY blob into typed IR using the given schema.
 pub fn decode(schema: &Schema, binary: &[u8]) -> Result<PgBatch> {
-    let mut reader = PgBinaryReader::new(schema, BufferView::new(binary))?;
     let mut rows = Vec::new();
-
-    while let Some(cells) = reader.next_tuple_raw()? {
-        rows.push(decode_row(schema, cells)?);
+    for row in Decoder::new(schema, binary)? {
+        rows.push(row?);
     }
-
-    reader.ensure_finished()?;
     Ok(PgBatch { rows })
 }
 
 /// Encode typed IR into a PostgreSQL `FORMAT binary` COPY blob using the given schema.
 pub fn encode(schema: &Schema, batch: &PgBatch) -> Result<Vec<u8>> {
-    let mut writer = PgBinaryWriter::new();
+    let mut encoder = Encoder::new(schema);
     for row in &batch.rows {
-        write_encoded_row(schema, &mut writer, row)?;
+        encoder.write_row(row)?;
     }
-    writer.write_footer();
-    Ok(writer.finish())
+    encoder.finish()
 }
 
 /// Incremental decoder for large in-memory COPY binary blobs.
@@ -63,14 +58,31 @@ impl<'a> Decoder<'a> {
         })
     }
 
-    /// Decode the next row, or `None` after the footer sentinel.
-    pub fn next_row(&mut self) -> Result<Option<PgRow>> {
-        match self.reader.next_tuple_raw()? {
-            Some(cells) => Ok(Some(decode_row(self.schema, cells)?)),
-            None => {
-                self.reader.ensure_finished()?;
-                Ok(None)
+    fn decode_row(&self, cells: Vec<FieldCell<'_>>) -> Result<PgRow> {
+        let mut values = Vec::with_capacity(self.schema.columns.len());
+        for (column, cell) in self.schema.columns.iter().zip(cells) {
+            values.push(
+                FieldDecoder::new(&column.name, &column.ty, column.nullable).decode(cell)?,
+            );
+        }
+        Ok(PgRow { values })
+    }
+}
+
+impl<'a> Iterator for Decoder<'a> {
+    type Item = Result<PgRow>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.reader.next_tuple_raw() {
+            Ok(Some(cells)) => Some(self.decode_row(cells)),
+            Ok(None) => {
+                if let Err(err) = self.reader.ensure_finished() {
+                    Some(Err(err))
+                } else {
+                    None
+                }
             }
+            Err(err) => Some(Err(err)),
         }
     }
 }
@@ -97,7 +109,7 @@ impl<'a> Encoder<'a> {
         if self.finished {
             return Err(Error::InvalidFooter);
         }
-        write_encoded_row(self.schema, &mut self.writer, row)
+        self.write_encoded_row(row)
     }
 
     /// Finalize the blob with the footer sentinel.
@@ -108,44 +120,33 @@ impl<'a> Encoder<'a> {
         }
         Ok(self.writer.finish())
     }
-}
 
-fn decode_row(schema: &Schema, cells: Vec<FieldCell<'_>>) -> Result<PgRow> {
-    let mut values = Vec::with_capacity(schema.columns.len());
-    for (column, cell) in schema.columns.iter().zip(cells) {
-        values.push(
-            FieldDecoder::new(&column.name, &column.ty, column.nullable).decode(cell)?,
-        );
+    fn write_encoded_row(&mut self, row: &PgRow) -> Result<()> {
+        if row.values.len() != self.schema.columns.len() {
+            return Err(Error::SchemaRowLengthMismatch {
+                expected: self.schema.columns.len(),
+                got: row.values.len(),
+            });
+        }
+
+        if self.schema.columns.len() > i16::MAX as usize {
+            return Err(Error::TooManyColumns {
+                max: i16::MAX,
+                got: self.schema.columns.len(),
+            });
+        }
+
+        let fields = self
+            .schema
+            .columns
+            .iter()
+            .zip(row.values.iter())
+            .map(|(column, value)| {
+                FieldEncoder::new(&column.name, &column.ty, column.nullable).encode(value)
+            })
+            .collect::<Result<Vec<EncodedField>>>()?;
+
+        self.writer
+            .write_tuple(self.schema.columns.len() as i16, fields)
     }
-    Ok(PgRow { values })
-}
-
-fn write_encoded_row(schema: &Schema, writer: &mut PgBinaryWriter, row: &PgRow) -> Result<()> {
-    if row.values.len() != schema.columns.len() {
-        return Err(Error::SchemaRowLengthMismatch {
-            expected: schema.columns.len(),
-            got: row.values.len(),
-        });
-    }
-
-    if schema.columns.len() > i16::MAX as usize {
-        return Err(Error::TooManyColumns {
-            max: i16::MAX,
-            got: schema.columns.len(),
-        });
-    }
-
-    let fields = schema
-        .columns
-        .iter()
-        .zip(row.values.iter())
-        .map(|(column, value)| {
-            FieldEncoder::new(&column.name, &column.ty, column.nullable).encode(value)
-        })
-        .collect::<Result<Vec<EncodedField>>>()?;
-
-    writer.write_tuple(
-        schema.columns.len() as i16,
-        fields,
-    )
 }

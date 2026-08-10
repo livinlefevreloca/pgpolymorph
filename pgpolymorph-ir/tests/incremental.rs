@@ -27,12 +27,8 @@ fn decoder_yields_same_rows_as_decode() {
 
     let batch = decode(&schema, &blob).unwrap();
 
-    let mut decoder = Decoder::new(&schema, &blob).unwrap();
-    let mut rows = Vec::new();
-    while let Some(row) = decoder.next_row().unwrap() {
-        rows.push(row);
-    }
-    assert!(decoder.next_row().unwrap().is_none());
+    let decoder = Decoder::new(&schema, &blob).unwrap();
+    let rows: Vec<_> = decoder.map(|row| row.unwrap()).collect();
 
     assert_eq!(batch.rows.len(), expected.rows.len());
     utils::assert_batches_eq(&expected, &PgBatch { rows: rows.clone() });
