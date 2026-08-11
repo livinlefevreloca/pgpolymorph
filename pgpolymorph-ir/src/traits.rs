@@ -1,7 +1,8 @@
 //! Conversion traits for mapping between IR and external formats.
 //!
-//! Implementors receive a full [`PgBatch`] and produce a native representation,
-//! or accept a native representation and produce IR.
+//! Implement these traits on your output type: `impl FromPgBatch for MyOutput` takes
+//! a [`PgBatch`] and produces `MyOutput`, and `impl ToPgBatch for MyInput` does the
+//! reverse. Trait definitions live here; format-specific impls live in other crates.
 //!
 //! ```ignore
 //! impl FromPgBatch for MyOutput {

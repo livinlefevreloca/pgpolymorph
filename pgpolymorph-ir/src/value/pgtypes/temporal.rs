@@ -38,6 +38,9 @@ impl PgTimestamp {
 }
 
 /// Timestamp with time zone, as microseconds since the Unix epoch (UTC).
+///
+/// PostgreSQL sends the same 8-byte microsecond payload for `timestamp` and
+/// `timestamptz`; the time-zone semantics live in the column type, not the bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PgTimestamptz {

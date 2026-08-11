@@ -14,22 +14,22 @@ pub(crate) struct PgBinaryReader<'a> {
 }
 
 impl<'a> PgBinaryReader<'a> {
-    pub fn new(schema: &'a Schema, mut view: BufferView<'a>) -> Result<Self> {
+    pub fn new(schema: &'a Schema, mut data: BufferView<'a>) -> Result<Self> {
         if schema.columns.len() > i16::MAX as usize {
             return Err(Error::TooManyColumns {
                 max: i16::MAX,
                 got: schema.columns.len(),
             });
         }
-        PgBinaryHeader::parse(&mut view)?;
+        PgBinaryHeader::parse(&mut data)?;
         Ok(Self {
-            reader: FieldReader::from_view(view),
+            reader: FieldReader::from(data),
             schema,
             finished: false,
         })
     }
 
-    pub fn next_tuple_raw(&mut self) -> Result<Option<Vec<FieldCell<'a>>>> {
+    pub fn next_tuple(&mut self) -> Result<Option<Vec<FieldCell<'a>>>> {
         if self.finished {
             return Ok(None);
         }
@@ -45,7 +45,7 @@ impl<'a> PgBinaryReader<'a> {
             return Ok(None);
         }
 
-        let field_count = self.reader.read_i16()?;
+        let field_count = self.reader.read_field_count()?;
         let expected = i16::try_from(self.schema.columns.len()).expect("checked in new");
         if field_count != expected {
             return Err(Error::FieldCountMismatch {
@@ -61,6 +61,7 @@ impl<'a> PgBinaryReader<'a> {
         Ok(Some(fields))
     }
 
+    /// Called after the last row when iteration stops without reading the footer sentinel.
     pub fn ensure_finished(&mut self) -> Result<()> {
         if self.finished {
             return Ok(());
@@ -71,8 +72,6 @@ impl<'a> PgBinaryReader<'a> {
                 available: 0,
             });
         }
-        // Caller received `Some(last_row)` and skipped the final `next_tuple_raw` that
-        // would have consumed the footer sentinel.
         if !self.try_consume_footer()? {
             return Err(Error::InvalidFooter);
         }
@@ -80,8 +79,8 @@ impl<'a> PgBinaryReader<'a> {
     }
 
     fn try_consume_footer(&mut self) -> Result<bool> {
-        if self.reader.peek_i16()? == FOOTER_SENTINEL {
-            self.reader.read_i16()?;
+        if self.reader.peek_field_count()? == FOOTER_SENTINEL {
+            self.reader.consume_field_count()?;
             self.finished = true;
             Ok(true)
         } else {

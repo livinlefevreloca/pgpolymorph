@@ -31,7 +31,10 @@ pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: FieldCell<'_>) -> R
     let has_nulls = view.read_i32()?;
     let element_oid = view.read_i32()? as u32;
     let payload_element_ty = PgType::from_oid(element_oid).ok_or_else(|| {
-        Error::UnsupportedType(PgType::Array(Box::new(element_ty.clone())))
+        Error::UnknownArrayElementOid {
+            column: decoder.column.to_string(),
+            element_oid,
+        }
     })?;
 
     if element_ty != &payload_element_ty {
@@ -44,9 +47,10 @@ pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: FieldCell<'_>) -> R
 
     let (dimensions, total_elements) = parse_dimensions(decoder, &mut view, ndim)?;
 
-    if has_nulls != constants::ARRAY_HAS_NULLS_FALSE
-        && has_nulls != constants::ARRAY_HAS_NULLS_TRUE
-    {
+    if !matches!(
+        has_nulls,
+        constants::ARRAY_HAS_NULLS_FALSE | constants::ARRAY_HAS_NULLS_TRUE
+    ) {
         return Err(Error::InvalidArrayHasNulls {
             column: decoder.column.to_string(),
             got: has_nulls,
@@ -54,7 +58,7 @@ pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: FieldCell<'_>) -> R
     }
 
     let element_decoder = FieldDecoder::new(decoder.column, element_ty, true);
-    let mut reader = FieldReader::from_view(view);
+    let mut reader = FieldReader::from(view);
     let mut elements = Vec::with_capacity(total_elements);
     for _ in 0..total_elements {
         elements.push(element_decoder.decode_array_element(reader.read_field()?)?);
@@ -78,7 +82,10 @@ fn parse_dimensions(
         let length = view.read_i32()?;
         let lower_bound = view.read_i32()?;
         if length < 0 {
-            return Err(decoder.invalid_payload("negative array dimension length"));
+            return Err(Error::InvalidArrayDimensionLength {
+                column: decoder.column.to_string(),
+                got: length,
+            });
         }
         total_elements = total_elements
             .checked_mul(length as i64)
@@ -124,7 +131,7 @@ pub(crate) fn encode_array(encoder: &FieldEncoder<'_>, value: &PgValue) -> Resul
         _ => return Err(encoder.type_mismatch(value)),
     };
 
-    if &array.element_type != element_ty {
+    if array.element_type != *element_ty {
         return Err(encoder.type_mismatch(value));
     }
 

@@ -69,7 +69,7 @@ pub(crate) fn decode_numeric(
 
     // Some fixtures use a truncated all-zero header for numeric zero.
     if view.remaining() < constants::NUMERIC_HEADER_BYTES {
-        let rest = view.read_rest()?;
+        let rest = view.read_remaining()?;
         if rest.iter().all(|&b| b == 0) {
             return Ok(PgNumeric::default());
         }

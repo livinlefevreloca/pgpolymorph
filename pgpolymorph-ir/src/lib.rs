@@ -73,7 +73,7 @@ impl<'a> Iterator for Decoder<'a> {
     type Item = Result<PgRow>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.reader.next_tuple_raw() {
+        match self.reader.next_tuple() {
             Ok(Some(cells)) => Some(self.decode_row(cells)),
             Ok(None) => {
                 if let Err(err) = self.reader.ensure_finished() {

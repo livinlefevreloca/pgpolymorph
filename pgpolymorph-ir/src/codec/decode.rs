@@ -63,8 +63,9 @@ impl<'a> FieldDecoder<'a> {
         match self.ty {
             PgType::Bool => self.decode_bool(&mut view),
             PgType::Bytea => Ok(PgValue::Bytea(pgtypes::PgBytea::new(
-                view.read_rest()?.to_vec(),
+                view.read_remaining()?.to_vec(),
             ))),
+            // PostgreSQL internal `char` is a 2-byte big-endian integer (see `PgChar`).
             PgType::Char => Ok(PgValue::Char(pgtypes::PgChar::new(
                 self.read_i16_exact(&mut view, constants::CHAR_PAYLOAD_BYTES)?,
             ))),
@@ -84,18 +85,18 @@ impl<'a> FieldDecoder<'a> {
                 self.read_f64_exact(&mut view, constants::FLOAT8_PAYLOAD_BYTES)?,
             ))),
             PgType::Text => Ok(PgValue::Text(pgtypes::PgText::new(
-                self.read_utf8_rest(&mut view)?,
+                self.read_utf8_remaining(&mut view)?,
             ))),
             PgType::Varchar(max_len) => {
-                let varchar = pgtypes::PgVarchar::new(self.read_utf8_rest(&mut view)?, *max_len);
+                let varchar = pgtypes::PgVarchar::new(self.read_utf8_remaining(&mut view)?, *max_len);
                 self.validate_varchar(&varchar)?;
                 Ok(PgValue::Varchar(varchar))
             }
             PgType::Name => Ok(PgValue::Name(pgtypes::PgName::new(
-                self.read_utf8_rest(&mut view)?,
+                self.read_utf8_remaining(&mut view)?,
             ))),
             PgType::Json => Ok(PgValue::Json(pgtypes::PgJson::new(
-                self.read_utf8_rest(&mut view)?,
+                self.read_utf8_remaining(&mut view)?,
             ))),
             PgType::Jsonb => self.decode_jsonb(&mut view),
             PgType::Date => self.decode_date(&mut view),
@@ -132,10 +133,10 @@ impl<'a> FieldDecoder<'a> {
     }
 
     fn decode_jsonb(&self, view: &mut BufferView<'_>) -> Result<PgValue> {
-        // A jsonb payload is at least one format-version byte followed by JSON bytes.
+        // First byte is the jsonb format version; remainder must be UTF-8 JSON.
         self.ensure_min_remaining(view, constants::JSONB_VERSION_BYTES, "jsonb payload too short")?;
         let version = self.read_u8_exact(view, constants::JSONB_VERSION_BYTES)?;
-        let json = self.read_utf8_rest(view)?;
+        let json = self.read_utf8_remaining(view)?;
         Ok(PgValue::Jsonb(pgtypes::PgJsonb::new(version, json)))
     }
 
@@ -228,8 +229,8 @@ impl<'a> FieldDecoder<'a> {
         self.map_view_len_err(view.read_f64_exact(len))
     }
 
-    fn read_utf8_rest(&self, view: &mut BufferView<'_>) -> Result<String> {
-        match view.read_utf8_rest() {
+    fn read_utf8_remaining(&self, view: &mut BufferView<'_>) -> Result<String> {
+        match view.read_utf8_remaining() {
             Ok(value) => Ok(value),
             Err(Error::UnexpectedEof { .. }) => Err(self.invalid_payload("invalid UTF-8")),
             Err(err) => Err(err),
@@ -238,7 +239,9 @@ impl<'a> FieldDecoder<'a> {
 
     fn map_view_len_err<T>(&self, result: Result<T>) -> Result<T> {
         result.map_err(|err| match err {
-            Error::UnexpectedEof { .. } => self.invalid_payload("unexpected payload length"),
+            Error::UnexpectedEof { .. } | Error::MalformedInput { .. } => {
+                self.invalid_payload("unexpected payload length")
+            }
             other => other,
         })
     }

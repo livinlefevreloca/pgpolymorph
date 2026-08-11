@@ -11,7 +11,7 @@ impl PgJson {
     }
 }
 
-/// Binary JSON (`jsonb` type) with wire version byte stripped at the IR boundary.
+/// Binary JSON (`jsonb` type) with format version byte stripped at the IR boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PgJsonb {

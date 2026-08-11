@@ -11,17 +11,17 @@ pub(crate) struct PgBinaryHeader {
 }
 
 impl PgBinaryHeader {
-    pub fn parse(view: &mut BufferView<'_>) -> Result<Self> {
-        validate_magic(view)?;
+    pub fn parse(data: &mut BufferView<'_>) -> Result<Self> {
+        validate_magic(data)?;
 
-        let flags = view.read_i32()?;
-        let ext_len = view.read_i32()?;
+        let flags = data.read_i32()?;
+        let ext_len = data.read_i32()?;
         if ext_len < 0 {
             return Err(Error::InvalidHeader {
                 reason: "negative extension length",
             });
         }
-        let extension = view.read_bytes(ext_len as usize)?.to_vec();
+        let extension = read_extension(data, ext_len as usize)?;
         Ok(PgBinaryHeader { flags, extension })
     }
 
@@ -32,10 +32,20 @@ impl PgBinaryHeader {
     }
 }
 
-fn validate_magic(view: &mut BufferView<'_>) -> Result<()> {
-    let magic = view.read_bytes(COPY_MAGIC.len())?;
-    if magic != COPY_MAGIC.as_slice() {
-        return Err(Error::InvalidMagic);
+fn validate_magic(data: &mut BufferView<'_>) -> Result<()> {
+    const MAGIC_LEN: usize = COPY_MAGIC.len();
+    let magic = data.read_fixed::<MAGIC_LEN>()?;
+    if magic.as_slice() == COPY_MAGIC.as_slice() {
+        Ok(())
+    } else {
+        Err(Error::InvalidMagic)
     }
-    Ok(())
+}
+
+fn read_extension(data: &mut BufferView<'_>, len: usize) -> Result<Vec<u8>> {
+    if len == 0 {
+        return Ok(Vec::new());
+    }
+    let mut ext = data.read_n_and_project_view(len)?;
+    Ok(ext.read_remaining()?.to_vec())
 }

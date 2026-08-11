@@ -24,10 +24,10 @@ pub(crate) const I32_BYTES: usize = 4;
 pub(crate) const I64_BYTES: usize = 8;
 
 /// Width of an IEEE754 single-precision float payload.
-pub(crate) const F32_BYTES: usize = I32_BYTES;
+pub(crate) const F32_BYTES: usize = 4;
 
 /// Width of an IEEE754 double-precision float payload.
-pub(crate) const F64_BYTES: usize = I64_BYTES;
+pub(crate) const F64_BYTES: usize = 8;
 
 /// Width of the per-tuple `field_count` prefix and footer sentinel.
 pub(crate) const COPY_FIELD_COUNT_BYTES: usize = I16_BYTES;

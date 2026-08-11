@@ -6,6 +6,18 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
+    #[error("malformed COPY binary input: {reason}")]
+    MalformedInput { reason: &'static str },
+
+    #[error("unknown array element OID in column {column}: {element_oid}")]
+    UnknownArrayElementOid {
+        column: String,
+        element_oid: u32,
+    },
+
+    #[error("invalid array dimension length in column {column}: got {got}")]
+    InvalidArrayDimensionLength { column: String, got: i32 },
+
     #[error("invalid COPY binary magic bytes")]
     InvalidMagic,
 

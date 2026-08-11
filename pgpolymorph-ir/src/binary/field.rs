@@ -1,7 +1,5 @@
 //! COPY binary field envelope: `int32` length prefix + optional payload.
 
-use std::ops::{Deref, DerefMut};
-
 use crate::binary::buffer_view::BufferView;
 use crate::binary::constants;
 
@@ -13,16 +11,34 @@ pub(crate) struct FieldCell<'a> {
 
 /// Cursor over a COPY tuple stream (field count + length-prefixed fields).
 pub(crate) struct FieldReader<'a> {
-    view: BufferView<'a>,
+    data: BufferView<'a>,
+}
+
+impl<'a> From<BufferView<'a>> for FieldReader<'a> {
+    fn from(data: BufferView<'a>) -> Self {
+        Self { data }
+    }
 }
 
 impl<'a> FieldReader<'a> {
-    pub fn from_view(view: BufferView<'a>) -> Self {
-        Self { view }
+    pub fn remaining(&self) -> usize {
+        self.data.remaining()
+    }
+
+    pub fn read_field_count(&mut self) -> crate::error::Result<i16> {
+        self.data.read_i16()
+    }
+
+    pub fn peek_field_count(&self) -> crate::error::Result<i16> {
+        self.data.peek_i16()
+    }
+
+    pub fn consume_field_count(&mut self) -> crate::error::Result<i16> {
+        self.data.read_i16()
     }
 
     pub fn read_field(&mut self) -> crate::error::Result<FieldCell<'a>> {
-        let len = self.view.read_i32()? as i64;
+        let len = self.data.read_i32()? as i64;
         if len == i64::from(constants::COPY_FIELD_NULL) {
             return Ok(FieldCell {
                 is_null: true,
@@ -32,24 +48,10 @@ impl<'a> FieldReader<'a> {
         if len < 0 {
             return Err(crate::error::Error::FieldTooLarge { len });
         }
-        let payload = self.view.take_n_and_project_view(len as usize)?;
+        let payload = self.data.read_n_and_project_view(len as usize)?;
         Ok(FieldCell {
             is_null: false,
             payload,
         })
-    }
-}
-
-impl<'a> Deref for FieldReader<'a> {
-    type Target = BufferView<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.view
-    }
-}
-
-impl<'a> DerefMut for FieldReader<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.view
     }
 }
