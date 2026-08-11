@@ -26,19 +26,15 @@ impl<'a> FieldReader<'a> {
     }
 
     pub fn read_field_count(&mut self) -> crate::error::Result<i16> {
-        self.data.read_i16()
+        self.data.read_be()
     }
 
     pub fn peek_field_count(&self) -> crate::error::Result<i16> {
-        self.data.peek_i16()
-    }
-
-    pub fn consume_field_count(&mut self) -> crate::error::Result<i16> {
-        self.data.read_i16()
+        self.data.peek_be()
     }
 
     pub fn read_field(&mut self) -> crate::error::Result<FieldCell<'a>> {
-        let len = self.data.read_i32()? as i64;
+        let len = self.data.read_be::<i32>()? as i64;
         if len == i64::from(constants::COPY_FIELD_NULL) {
             return Ok(FieldCell {
                 is_null: true,

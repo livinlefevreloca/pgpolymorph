@@ -76,15 +76,15 @@ pub(crate) fn decode_numeric(
         return Err(invalid_payload(column, ty, "numeric payload too short"));
     }
 
-    let ndigits = view.read_i16()?;
-    let weight = view.read_i16()?;
-    let sign = decode_sign(view.read_i16()?, column, ty)?;
-    let dscale = view.read_i16()?;
+    let ndigits = view.read_be::<i16>()?;
+    let weight = view.read_be::<i16>()?;
+    let sign = decode_sign(view.read_be::<i16>()?, column, ty)?;
+    let dscale = view.read_be::<i16>()?;
 
     let digit_count = ndigits.max(0) as usize;
     let mut digits = Vec::with_capacity(digit_count);
     for _ in 0..digit_count {
-        digits.push(view.read_i16()?);
+        digits.push(view.read_be::<i16>()?);
     }
 
     if view.remaining() != 0 {

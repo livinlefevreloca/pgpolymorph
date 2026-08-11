@@ -23,13 +23,13 @@ pub(crate) fn decode_array(decoder: &FieldDecoder<'_>, cell: FieldCell<'_>) -> R
 
     let mut view = strip_optional_total_len(decoder, cell.payload)?;
 
-    let ndim = view.read_i32()?;
+    let ndim = view.read_be::<i32>()?;
     if ndim < constants::ARRAY_MIN_NDIM {
         return Err(decoder.invalid_payload("array ndim must be at least 1"));
     }
 
-    let has_nulls = view.read_i32()?;
-    let element_oid = view.read_i32()? as u32;
+    let has_nulls = view.read_be::<i32>()?;
+    let element_oid = view.read_be::<i32>()? as u32;
     let payload_element_ty = PgType::from_oid(element_oid).ok_or_else(|| {
         Error::UnknownArrayElementOid {
             column: decoder.column.to_string(),
@@ -79,8 +79,8 @@ fn parse_dimensions(
     let mut dimensions = Vec::with_capacity(ndim as usize);
     let mut total_elements = 1i64;
     for _ in 0..ndim {
-        let length = view.read_i32()?;
-        let lower_bound = view.read_i32()?;
+        let length = view.read_be::<i32>()?;
+        let lower_bound = view.read_be::<i32>()?;
         if length < 0 {
             return Err(Error::InvalidArrayDimensionLength {
                 column: decoder.column.to_string(),
@@ -111,9 +111,9 @@ fn strip_optional_total_len<'a>(
         constants::ARRAY_TOTAL_LEN_BYTES,
         "array payload too short",
     )?;
-    let total_len = view.peek_i32()? as usize;
+    let total_len = view.peek_be::<i32>()? as usize;
     if total_len == view.remaining().saturating_sub(constants::ARRAY_TOTAL_LEN_BYTES) {
-        view.read_i32()?;
+        view.read_be::<i32>()?;
     }
     Ok(view)
 }

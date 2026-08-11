@@ -80,7 +80,7 @@ impl<'a> PgBinaryReader<'a> {
 
     fn try_consume_footer(&mut self) -> Result<bool> {
         if self.reader.peek_field_count()? == FOOTER_SENTINEL {
-            self.reader.consume_field_count()?;
+            self.reader.read_field_count()?;
             self.finished = true;
             Ok(true)
         } else {
