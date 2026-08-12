@@ -14,7 +14,7 @@ This crate owns:
 1. **Value IR** — canonical in-memory representation of PostgreSQL row data
 2. **Schema types** — external `Schema` required for typed decode/encode
 3. **COPY binary format** — parse/serialize the file-format blob (header, tuples, footer, field envelopes)
-4. **Conversion traits** — `FromPgBatch` / `ToPgBatch` trait **definitions** (serde-style: traits here, implementations elsewhere)
+4. **Conversion traits** — `PgMorph` trait **definition** (serde-style: trait here, implementations in format plugin crates)
 5. **Public API** — `decode` / `encode` between bytes and IR
 
 Format-specific **implementations** of the traits (JSON, Arrow, etc.) live in separate crates (e.g. `pgpolymorph-json`) that depend on `pgpolymorph-ir` and their own format libraries. Trait definitions add **zero dependencies** — only impl crates pull in serde, arrow, etc.
@@ -45,7 +45,7 @@ pgpolymorph/
         ├── error.rs           # Error / Result types
         ├── schema.rs          # PgType, Column, Schema
         ├── value/             # PgValue, PgRow, PgBatch + pgtypes/
-        ├── traits.rs          # FromPgBatch, ToPgBatch (trait defs only — no impls)
+        ├── traits.rs          # PgMorph (trait def only — no impls)
         ├── binary/            # COPY binary FILE format (NOT pgwire)
         │   ├── mod.rs
         │   ├── buffer_view.rs # all binary parsing (cursor + typed reads)
@@ -74,9 +74,9 @@ All modules contain **type definitions, doc comments, and function/trait signatu
 
 Rationale: keep transitive deps minimal by default. Use `std::io::Cursor` for byte slicing, manual big-endian reads/writes, and `thiserror` for the `Error` enum. Avoid `bytes`, `arrow`, etc.
 
-Enable **`pgpolymorph-ir/serde`** when you need `Serialize`/`Deserialize` on public IR types (`PgValue`, `PgBatch`, `PgJson`, etc.). JSON/`jsonb` remain raw `String` fields in IR; parse to typed structs with `serde_json::from_str` in format crates or application code. Format-specific conversion still uses `FromPgBatch`/`ToPgBatch` in separate crates.
+Enable **`pgpolymorph-ir/serde`** when you need `Serialize`/`Deserialize` on public IR types (`PgValue`, `PgBatch`, `PgJson`, etc.). JSON/`jsonb` remain raw `String` fields in IR; parse to typed structs with `serde_json::from_str` in format crates or application code. Format-specific conversion uses `PgMorph` in separate plugin crates.
 
-Future format crates depend only on `pgpolymorph-ir` (for IR types + traits) plus their format-specific deps (e.g. `serde_json`). They **implement** `FromPgBatch` / `ToPgBatch`; they do not redefine the traits.
+Future format crates depend only on `pgpolymorph-ir` (for IR types + trait) plus their format-specific deps (e.g. `serde_json`). They **implement** `PgMorph`; they do not redefine the trait.
 
 ---
 
@@ -287,29 +287,27 @@ Design notes:
 
 ---
 
-## Conversion Traits — [`traits.rs`](src/traits.rs)
+## Conversion Trait — [`traits.rs`](src/traits.rs)
 
-Following the **serde model**: trait definitions live in the core crate; format crates provide implementations. This lets users implement custom formats by depending on a single crate (`pgpolymorph-ir`).
+Following the **serde model**: the trait definition lives in the core crate; format plugin crates provide implementations. This lets users implement custom formats by depending on a single crate (`pgpolymorph-ir`).
 
-### Batch-level traits (v1)
+### `PgMorph` (v1)
 
 ```rust
-/// Convert from IR to a native format representation.
-pub trait FromPgBatch {
-    type Output;
+/// Bidirectional conversion between PgBatch IR and a native format representation.
+pub trait PgMorph {
+    type Native;
     type Error;
-    fn from_pg_batch(schema: &Schema, batch: &PgBatch) -> Result<Self::Output, Self::Error>;
-}
 
-/// Convert from a native format representation to IR.
-pub trait ToPgBatch {
-    type Error;
-    fn to_pg_batch(&self, schema: &Schema) -> Result<PgBatch, Self::Error>;
+    fn from_pg_batch(schema: &Schema, batch: &PgBatch) -> Result<Self::Native, Self::Error>;
+    fn to_pg_batch(native: &Self::Native, schema: &Schema) -> Result<PgBatch, Self::Error>;
 }
 ```
 
 Design notes:
 
+- Implement on a **marker type** per format (e.g. `JsonFormat`) so outer crates can select plugins at compile time: `copy_out::<JsonFormat>()`.
+- `Native` is the same type for both directions (encode and decode).
 - `Schema` is passed explicitly so impls can validate types and column layout.
 - Each format crate defines its own `Error` type (e.g. `pgpolymorph_json::Error`); no coupling to `pgpolymorph_ir::Error`.
 
@@ -317,12 +315,22 @@ Design notes:
 
 ```rust
 // In pgpolymorph-json (separate crate):
-impl FromPgBatch for serde_json::Value { /* ... */ }
-impl ToPgBatch for serde_json::Value { /* ... */ }
+pub struct JsonFormat;
+
+impl PgMorph for JsonFormat {
+    type Native = Vec<serde_json::Value>;
+    type Error = JsonError;
+    // ...
+}
 
 // User's custom format crate:
-impl FromPgBatch for MyOutput { /* ... */ }
-impl ToPgBatch for MyInput { /* ... */ }
+pub struct MyFormat;
+
+impl PgMorph for MyFormat {
+    type Native = MyNative;
+    type Error = MyError;
+    // ...
+}
 ```
 
 ### Full pipeline (across crates)
@@ -335,8 +343,8 @@ flowchart LR
 
     Binary -->|"pgpolymorph_ir::decode"| IR
     IR -->|"pgpolymorph_ir::encode"| Binary
-    IR -->|"FromPgBatch"| Native
-    Native -->|"ToPgBatch"| IR
+    IR -->|"PgMorph::from_pg_batch"| Native
+    Native -->|"PgMorph::to_pg_batch"| IR
 ```
 
 No trait implementations for JSON, Arrow, or any external format appear in `pgpolymorph-ir`.
@@ -452,7 +460,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 Explicitly out of scope for `pgpolymorph-ir`:
 
 - **No pgwire protocol** — no message parsing, no CopyData framing, no connection lifecycle; a future `pgpolymorph-pgwire` (or similar) crate strips/assembles blobs and hands them here
-- **No trait implementations for external formats** — `FromPgBatch`/`ToPgBatch` defs only; JSON/Arrow/etc. impls in separate crates
+- **No trait implementations for external formats** — `PgMorph` def only; JSON/Arrow/etc. impls in separate plugin crates
 - **No schema discovery** from PostgreSQL catalog — caller supplies `Schema`
 - **No `FORMAT text`** — binary file format only
 - **No libpq / network I/O** — accepts `&[u8]`, returns `Vec<u8>`
