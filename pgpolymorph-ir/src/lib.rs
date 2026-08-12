@@ -12,7 +12,7 @@ pub mod value;
 pub use binary::COPY_MAGIC;
 pub use error::{Error, Result};
 pub use schema::{Column, PgType, Schema};
-pub use traits::{FromPgBatch, ToPgBatch};
+pub use traits::PgMorph;
 pub use value::{
     pgtypes::{
         ArrayDimension, NumericSign, PgArray, PgBool, PgBytea, PgChar, PgDate, PgFloat4, PgFloat8,
